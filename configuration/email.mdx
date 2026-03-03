@@ -1,0 +1,404 @@
+---
+title: Email Configuration
+description: Set up Resend for transactional emails including invitations, password resets, and vulnerability assignments
+---
+
+VulnTrack uses [Resend](https://resend.com) for reliable transactional email delivery. Email functionality is required for team invitations, password resets, and vulnerability assignment notifications.
+
+## Email Types
+
+VulnTrack sends three types of automated emails:
+
+<CardGroup cols={3}>
+  <Card title="Invitations" icon="envelope">
+    Secure invitation links for new team members with 24-hour expiration.
+  </Card>
+  
+  <Card title="Password Resets" icon="key">
+    Time-limited password reset links with 1-hour expiration.
+  </Card>
+  
+  <Card title="Assignments" icon="bell">
+    Notifications when vulnerabilities are assigned to analysts.
+  </Card>
+</CardGroup>
+
+## Setup with Resend
+
+<Steps>
+  <Step title="Create Resend account">
+    Sign up at [resend.com](https://resend.com) and verify your email.
+  </Step>
+  
+  <Step title="Add and verify domain">
+    Navigate to **Domains** in the Resend dashboard:
+    
+    1. Click **Add Domain**
+    2. Enter your domain (e.g., `vulntrack.yourdomain.com`)
+    3. Add the provided DNS records to your domain:
+       - **SPF record** for sender authentication
+       - **DKIM records** for email signing
+       - **MX record** (optional, for receiving replies)
+    
+    <Note>
+      DNS propagation can take up to 48 hours. Use Resend's verification tool to check status.
+    </Note>
+  </Step>
+  
+  <Step title="Generate API key">
+    In the Resend dashboard:
+    
+    1. Go to **API Keys**
+    2. Click **Create API Key**
+    3. Name it (e.g., "VulnTrack Production")
+    4. Copy the key immediately (it won't be shown again)
+  </Step>
+  
+  <Step title="Configure environment variables">
+    Add to your `.env` file:
+    
+    ```bash .env
+    RESEND_API_KEY="re_your_api_key_here"
+    EMAIL_FROM="VulnTrack <noreply@yourdomain.com>"
+    ```
+    
+    <Warning>
+      The email address in `EMAIL_FROM` must use your verified domain.
+    </Warning>
+  </Step>
+</Steps>
+
+## Environment Variables
+
+<ParamField path="RESEND_API_KEY" type="string">
+  Your Resend API key for sending emails.
+  
+  **Format:** `re_xxxxxxxxxxxx`
+  
+  **Get from:** Resend Dashboard > API Keys
+  
+  If not set, VulnTrack will operate in **mock mode** and log emails to console instead of sending them.
+</ParamField>
+
+<ParamField path="EMAIL_FROM" type="string" default="VulnTrack System <system@vulntrack.org>">
+  Sender email address displayed in outgoing emails.
+  
+  **Format:** `Display Name <email@domain.com>`
+  
+  **Examples:**
+  - `VulnTrack <noreply@yourdomain.com>`
+  - `Security Team <security@company.com>`
+  - `VulnTrack Alerts <alerts@vulntrack.io>`
+  
+  <Warning>
+    Must match a verified domain in your Resend account.
+  </Warning>
+</ParamField>
+
+<ParamField path="NEXT_PUBLIC_APP_URL" type="string" required>
+  Base URL used in email links.
+  
+  **Development:** `http://localhost:3000`
+  
+  **Production:** `https://vulntrack.yourdomain.com`
+  
+  This URL is prepended to invitation and password reset links.
+</ParamField>
+
+## Email Templates
+
+VulnTrack uses custom HTML email templates defined in `src/lib/email-templates.ts`.
+
+### Invitation Email
+
+**Triggered when:** Admin sends a team invitation
+
+**Contains:**
+- Personalized greeting
+- Invitation acceptance button
+- Link expiration warning (24 hours)
+- Direct link fallback
+
+**Implementation:**
+```typescript src/lib/email-templates.ts:67
+export function getInvitationEmail(inviteLink: string)
+```
+
+### Password Reset Email
+
+**Triggered when:** User requests password reset
+
+**Contains:**
+- Reset password button
+- Security notice
+- Link expiration warning (1 hour)
+- Ignore instructions for unsolicited resets
+
+**Implementation:**
+```typescript src/lib/email-templates.ts:95
+export function getPasswordResetEmail(resetLink: string)
+```
+
+### Assignment Notification
+
+**Triggered when:** Vulnerability is assigned to a user
+
+**Contains:**
+- Vulnerability title and ID
+- Direct link to vulnerability details
+- Call to action for remediation
+
+**Implementation:**
+```typescript src/lib/email-templates.ts:123
+export function getAssignmentEmail(vulnerabilityTitle: string, vulnerabilityId: string)
+```
+
+## Email Service (src/lib/email.ts)
+
+The core email sending function:
+
+```typescript src/lib/email.ts:17
+export async function sendEmail({
+  to: string,
+  subject: string,
+  html: string,
+  text?: string
+})
+```
+
+### Mock Mode
+
+When `RESEND_API_KEY` is not set, emails are logged to console:
+
+```
+[MOCK EMAIL] To: user@example.com, Subject: Welcome to VulnTrack
+[MOCK EMAIL] HTML Preview: <div style="font-family: 'Segoe UI'...
+```
+
+**Use cases:**
+- Local development without Resend account
+- Testing email triggers
+- CI/CD environments
+
+### Production Mode
+
+With `RESEND_API_KEY` configured, emails are sent via Resend:
+
+```typescript
+const data = await resend.emails.send({
+  from: FROM_EMAIL,
+  to,
+  subject,
+  html,
+  text,
+})
+```
+
+## Sending Emails from Code
+
+### Example: Send invitation
+
+```typescript
+import { sendEmail } from "@/lib/email"
+import { getInvitationEmail } from "@/lib/email-templates"
+
+const inviteLink = `${process.env.NEXT_PUBLIC_APP_URL}/accept-invite?token=${token}`
+const html = getInvitationEmail(inviteLink)
+
+await sendEmail({
+  to: "newuser@example.com",
+  subject: "You're invited to join VulnTrack",
+  html,
+})
+```
+
+### Example: Send password reset
+
+```typescript
+import { sendEmail } from "@/lib/email"
+import { getPasswordResetEmail } from "@/lib/email-templates"
+
+const resetLink = `${process.env.NEXT_PUBLIC_APP_URL}/reset-password?token=${resetToken}`
+const html = getPasswordResetEmail(resetLink)
+
+await sendEmail({
+  to: user.email,
+  subject: "Reset your VulnTrack password",
+  html,
+})
+```
+
+### Example: Send assignment notification
+
+```typescript
+import { sendEmail } from "@/lib/email"
+import { getAssignmentEmail } from "@/lib/email-templates"
+
+const html = getAssignmentEmail(vulnerability.title, vulnerability.id)
+
+await sendEmail({
+  to: assignee.email,
+  subject: `New Assignment: ${vulnerability.title}`,
+  html,
+})
+```
+
+## Template Customization
+
+Email templates use inline CSS for maximum email client compatibility.
+
+### Shared Styles (src/lib/email-templates.ts:1)
+
+```typescript
+export const styles = {
+  container: `..`,
+  header: `..`,
+  button: `..`,
+  footer: `..`,
+}
+```
+
+### Customization Options
+
+<Steps>
+  <Step title="Update branding">
+    Modify the logo and color scheme in `styles.logo` and `styles.button`.
+  </Step>
+  
+  <Step title="Change sender name">
+    Update `EMAIL_FROM` environment variable.
+  </Step>
+  
+  <Step title="Modify footer">
+    Edit `commonFooter` constant in `email-templates.ts:60`.
+  </Step>
+  
+  <Step title="Add new email type">
+    Create a new function in `email-templates.ts` following the existing pattern.
+  </Step>
+</Steps>
+
+## Testing Emails
+
+### Local Testing (Mock Mode)
+
+```bash
+# Run without RESEND_API_KEY
+npm run dev
+
+# Trigger an email action (e.g., send invitation)
+# Check console for output:
+[MOCK EMAIL] To: test@example.com, Subject: ...
+```
+
+### Production Testing
+
+<Steps>
+  <Step title="Use Resend test mode">
+    Send emails to your own verified address first.
+  </Step>
+  
+  <Step title="Check Resend logs">
+    View delivery status in Resend Dashboard > Logs.
+  </Step>
+  
+  <Step title="Test all templates">
+    Manually trigger each email type:
+    - Send a test invitation
+    - Request a password reset
+    - Assign a vulnerability
+  </Step>
+  
+  <Step title="Verify deliverability">
+    Check spam folders and email headers (SPF/DKIM/DMARC).
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Emails not sending">
+    **Symptoms:** No emails received, no errors in console
+    
+    **Solutions:**
+    - Verify `RESEND_API_KEY` is set correctly
+    - Check Resend dashboard for API errors
+    - Ensure domain is verified in Resend
+    - Check rate limits (Resend free tier: 100 emails/day)
+  </Accordion>
+  
+  <Accordion title="Domain verification failed">
+    **Symptoms:** `Domain not verified` error
+    
+    **Solutions:**
+    - Wait 24-48 hours for DNS propagation
+    - Use Resend's verification tool to check DNS records
+    - Ensure DNS records match exactly (no trailing dots or spaces)
+    - Try using `dig` or `nslookup` to verify DNS changes
+  </Accordion>
+  
+  <Accordion title="Emails go to spam">
+    **Symptoms:** Emails delivered but marked as spam
+    
+    **Solutions:**
+    - Verify SPF, DKIM, and DMARC records are configured
+    - Use a professional sender address (not gmail.com)
+    - Add plain text version to emails
+    - Warm up your domain (send gradually increasing volumes)
+  </Accordion>
+  
+  <Accordion title="Invalid FROM address">
+    **Symptoms:** `403 Forbidden` or `Invalid from address`
+    
+    **Solutions:**
+    - Ensure `EMAIL_FROM` uses your verified Resend domain
+    - Check for typos in email address
+    - Verify domain verification status in Resend
+  </Accordion>
+  
+  <Accordion title="Links not working in emails">
+    **Symptoms:** Email links lead to 404 or wrong domain
+    
+    **Solutions:**
+    - Verify `NEXT_PUBLIC_APP_URL` is set correctly
+    - Ensure it matches your deployment URL
+    - Check for trailing slashes (should not have one)
+    - Test token generation and validation logic
+  </Accordion>
+</AccordionGroup>
+
+## Rate Limits
+
+Resend free tier limits:
+- **100 emails per day**
+- **3,000 emails per month**
+
+For production deployments with higher volume, upgrade to a paid plan.
+
+<Note>
+  Monitor usage in Resend Dashboard > Usage to avoid hitting limits.
+</Note>
+
+## Security Considerations
+
+<CardGroup cols={2}>
+  <Card title="Secure API keys" icon="key">
+    Never commit `RESEND_API_KEY` to version control. Use environment variables or secrets management.
+  </Card>
+  
+  <Card title="Time-limited tokens" icon="clock">
+    Invitation and reset tokens expire automatically (24h and 1h respectively).
+  </Card>
+  
+  <Card title="Single-use tokens" icon="shield-check">
+    Tokens are consumed after first use to prevent replay attacks.
+  </Card>
+  
+  <Card title="Verify senders" icon="certificate">
+    Always use verified domains to prevent spoofing and improve deliverability.
+  </Card>
+</CardGroup>
+
+<Warning>
+  **Production Warning:** Never use unverified domains or `onboarding@resend.dev` in production. This will result in poor deliverability and potential email rejection.
+</Warning>

@@ -1,0 +1,230 @@
+---
+title: Creating and Managing Vulnerabilities
+description: Step-by-step guide for creating, editing, and tracking vulnerabilities in VulnTrack
+---
+
+This guide walks you through the complete workflow of creating and managing vulnerabilities in VulnTrack, from initial creation to approval and assignment.
+
+## Creating a New Vulnerability
+
+There are two primary ways to add vulnerabilities to VulnTrack:
+
+### Manual Creation
+
+<Steps>
+  <Step title="Navigate to Vulnerabilities">
+    Go to the **Vulnerabilities** page from the dashboard sidebar.
+  </Step>
+  
+  <Step title="Click New Vulnerability">
+    Click the **New Vulnerability** button in the top right corner.
+  </Step>
+  
+  <Step title="Fill in the Details">
+    Complete the vulnerability form with the following information:
+    - **Title**: A clear, descriptive name for the vulnerability
+    - **Description**: Detailed explanation of the security issue
+    - **Severity**: Select from CRITICAL, HIGH, MEDIUM, or LOW
+    - **Status**: Initial status (defaults to OPEN)
+    - **Asset**: The affected system or application
+  </Step>
+  
+  <Step title="Add Risk Scores (Optional)">
+    Configure DREAD or STRIDE scoring frameworks to quantify the risk:
+    - **DREAD Score**: Rate Damage, Reproducibility, Exploitability, Affected Users, and Discoverability (1-10 scale)
+    - **STRIDE Score**: Identify threat categories (Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, Elevation of Privilege)
+  </Step>
+  
+  <Step title="Submit for Review">
+    Click **Create Vulnerability** to submit. Non-admin users will see their vulnerability enter a PENDING approval status.
+  </Step>
+</Steps>
+
+### CVE Import
+
+Import vulnerabilities directly from the National Vulnerability Database:
+
+<Steps>
+  <Step title="Navigate to Import">
+    Go to **Vulnerabilities** > **Import CVE**.
+  </Step>
+  
+  <Step title="Enter CVE ID">
+    Enter a valid CVE identifier (e.g., `CVE-2024-1234`).
+  </Step>
+  
+  <Step title="Review Auto-Populated Data">
+    VulnTrack automatically fetches:
+    - CVE title and description
+    - CVSS score and severity rating
+    - Affected systems (CPE data)
+    - Official references and advisories
+    - Default mitigation steps
+  </Step>
+  
+  <Step title="Customize and Save">
+    Review the imported data, make any necessary adjustments, and click **Import**.
+  </Step>
+</Steps>
+
+<Note>
+  **Duplicate Prevention**: VulnTrack prevents importing the same CVE twice within your team. If a CVE already exists, you'll receive a notification.
+</Note>
+
+## Approval Workflow
+
+VulnTrack implements a multi-tenant approval system to ensure data quality:
+
+### For Analysts and Viewers
+
+When you create a vulnerability:
+1. The vulnerability is created with `approvalStatus: "PENDING"`
+2. **Only you and admins** can view the vulnerability
+3. It won't appear in team-wide reports or dashboards until approved
+4. You'll receive a notification once it's approved
+
+### For Administrators
+
+Admins have two options:
+- **Auto-approval**: Vulnerabilities created by admins are automatically approved
+- **Manual approval**: Review pending vulnerabilities and click **Approve Vulnerability** on the details page
+
+```typescript
+// From vulnerabilities.ts:156
+const approvalStatus = user.role === 'ADMIN' ? 'APPROVED' : 'PENDING'
+```
+
+## Editing Vulnerabilities
+
+<Steps>
+  <Step title="Open Vulnerability Details">
+    Click on any vulnerability from the list to view its details page.
+  </Step>
+  
+  <Step title="Click Edit">
+    If you're the creator or an admin, you'll see an **Edit** button.
+  </Step>
+  
+  <Step title="Update Fields">
+    Modify any of the following:
+    - Title, description, severity, or status
+    - DREAD or STRIDE scores
+    - Affected systems and mitigation steps
+  </Step>
+  
+  <Step title="Save Changes">
+    Click **Update** to save your changes. The system logs all modifications in the audit trail.
+  </Step>
+</Steps>
+
+<Warning>
+  **Authorization**: You can only edit vulnerabilities that:
+  - You created, OR
+  - You're an admin for your team
+  
+  Cross-tenant editing is strictly prevented for security.
+</Warning>
+
+## Changing Vulnerability Status
+
+VulnTrack supports three primary statuses:
+
+- **OPEN**: Newly discovered, awaiting remediation
+- **IN_PROGRESS**: Currently being investigated or fixed
+- **RESOLVED**: Successfully mitigated or patched
+
+### Quick Status Update
+
+From the vulnerability details page:
+1. Click **Mark as Resolved** to close the issue
+2. Click **Reopen Issue** to return a resolved vulnerability to OPEN
+
+```typescript
+// From vulnerabilities.ts:343-371
+export async function updateVulnerabilityStatus(id: string, status: string) {
+  // Verify ownership
+  const existing = await prisma.vulnerability.findUnique({
+    where: { id, userId: session.user.id }
+  })
+  
+  await prisma.vulnerability.update({
+    where: { id },
+    data: { status }
+  })
+  
+  await logAudit("UPDATE_STATUS", "Vulnerability", id, `Status changed to ${status}`)
+}
+```
+
+## Deleting Vulnerabilities
+
+To delete a vulnerability:
+
+<Steps>
+  <Step title="Verify Ownership">
+    Only the creator of a vulnerability can delete it (admins can delete any team vulnerability).
+  </Step>
+  
+  <Step title="Navigate to Details">
+    Open the vulnerability details page.
+  </Step>
+  
+  <Step title="Click Delete">
+    Click the **Delete** button and confirm the action.
+  </Step>
+  
+  <Step title="Cascade Deletion">
+    The system automatically removes:
+    - Associated DREAD/STRIDE scores
+    - All comments
+    - Audit log entries reference the deletion
+  </Step>
+</Steps>
+
+<Warning>
+  **Irreversible Action**: Deleting a vulnerability cannot be undone. Consider changing the status to RESOLVED instead if you want to preserve the record.
+</Warning>
+
+## Team Isolation
+
+All vulnerabilities are scoped to your team:
+
+- **Strict multi-tenancy**: You can only see vulnerabilities from your team
+- **Admin boundaries**: Even admins are restricted to their own team's data
+- **Automatic team assignment**: New vulnerabilities inherit your team ID
+
+```typescript
+// From vulnerabilities.ts:101-105
+// Check Team Scope - STRICT ISOLATION
+if (!user?.teamId || !vulnerability.teamId || user.teamId !== vulnerability.teamId) {
+  return { success: false, error: "Unauthorized: Cross-tenant access denied" }
+}
+```
+
+## Best Practices
+
+<Tip>
+  **Consistent Naming**: Use a clear naming convention for vulnerability titles:
+  - ✅ "SQL Injection in Login Form"
+  - ✅ "XSS Vulnerability in User Profile Comments"
+  - ❌ "Security Issue"
+  - ❌ "Bug #123"
+</Tip>
+
+<Tip>
+  **Complete Descriptions**: Include:
+  - Steps to reproduce
+  - Affected endpoints or components
+  - Potential impact
+  - Any workarounds or temporary fixes
+</Tip>
+
+<Tip>
+  **Use CVE Import When Available**: Importing from CVE databases saves time and ensures consistency with industry-standard vulnerability data.
+</Tip>
+
+## Next Steps
+
+- Learn how to [assign vulnerabilities to team members](/guides/assigning-tasks)
+- Explore [risk scoring frameworks](/scoring/comparison) to quantify impact
+- Generate [comprehensive reports](/guides/generating-reports) for stakeholders

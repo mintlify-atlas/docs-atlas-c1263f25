@@ -1,80 +1,418 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart Guide
+description: Get started with VulnTrack in minutes - from account creation to your first vulnerability with risk scoring
 ---
 
-## Get started in three steps
+## Get Started with VulnTrack
 
-Get your documentation site running locally and make your first customization.
-
-### Step 1: Set up your local environment
-
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 2: Deploy your changes
-
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
-
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
-
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
-
-### Step 3: Go live
-
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
-
-## Next steps
-
-Now that you have your docs running, explore these key features:
-
-<CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
-</CardGroup>
+This guide will walk you through creating your first vulnerability entry, applying DREAD and STRIDE risk scores, and exploring the core features of VulnTrack.
 
 <Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
+This quickstart assumes you already have VulnTrack running. If not, follow the [Installation Guide](/installation) first.
 </Note>
+
+<Steps>
+  <Step title="Create Your Account">
+    VulnTrack uses an **invitation-only system** for security. The first registered user becomes the System Administrator.
+
+    ### First User (Admin)
+
+    Navigate to the registration page:
+
+    ```bash
+    http://localhost:3000/register
+    ```
+
+    Fill in your details:
+    - **Name**: Your full name
+    - **Email**: Will be used for login
+    - **Password**: Minimum 8 characters
+
+    The first user is automatically assigned:
+    - **Role**: ADMIN
+    - **Team**: A default team is auto-created ("My Organization")
+
+    <Info>
+    Subsequent users must be invited by an Admin through the Dashboard > Settings panel. Each invitation generates a single-use token.
+    </Info>
+
+    ### Team Members
+
+    If you received an invitation link:
+
+    1. Click the invitation link (format: `/register?token=xxx`)
+    2. Complete the registration form
+    3. You'll be added to your team with the assigned role (Admin, Analyst, or Viewer)
+
+    <Warning>
+    Invitation tokens expire after the configured time period. Contact your admin if your token has expired.
+    </Warning>
+  </Step>
+
+  <Step title="Navigate to the Dashboard">
+    After logging in, you'll see the main dashboard with:
+
+    - **Summary Cards**: Total vulnerabilities, critical issues, remediated count, and active users
+    - **Recent Activity Chart**: Visualization of vulnerability trends
+    - **Top Risks**: Critical and high-severity vulnerabilities
+    - **Recent Vulnerabilities**: Your team's latest entries
+    - **Quick Actions**: Shortcuts to reports, user management, and settings
+
+    The dashboard automatically calculates real-time statistics from your vulnerability database.
+  </Step>
+
+  <Step title="Import a CVE (Recommended)">
+    The fastest way to add a vulnerability is by importing an existing CVE with automatic data population.
+
+    ### Navigate to CVE Import
+
+    From the dashboard:
+    1. Click **Vulnerabilities** in the sidebar
+    2. Click **Import CVE**
+
+    Or navigate directly to: `http://localhost:3000/dashboard/vulnerabilities/import`
+
+    ### Search for a CVE
+
+    The CVE import page features **autocomplete search**:
+
+    ```typescript
+    // Start typing a CVE ID
+    CVE-2021-44228  // Log4Shell example
+    ```
+
+    As you type (minimum 4 characters), VulnTrack will:
+    - Search the CVE database in real-time
+    - Display matching CVEs with descriptions, CVSS scores, and severity
+    - Allow keyboard navigation (arrow keys + Enter)
+
+    <Tip>
+    VulnTrack fetches data from **VulnCheck API** (primary) and falls back to **NIST NVD** if unavailable.
+    </Tip>
+
+    ### Review the Preview
+
+    After selecting a CVE, VulnTrack displays:
+
+    - **Source badge**: Shows whether data came from VulnCheck or NIST
+    - **KEV badge**: Animated alert if the CVE is exploited in the wild
+    - **Title & Description**: Auto-populated from CVE database
+    - **DREAD Calculator**: Pre-filled based on CVSS metrics
+
+    The DREAD score is calculated using the formula from `lib/scoring.ts`:
+
+    ```typescript
+    // CVSS → DREAD mapping
+    damage = cvssScore >= 9 ? 10 : Math.ceil(cvssScore)
+    reproducibility = attackComplexity === "LOW" ? 10 : 5
+    exploitability = privileges === "NONE" ? 10 : 3
+    affectedUsers = scope === "CHANGED" ? 10 : 5
+    discoverability = attackVector === "NETWORK" ? 10 : 3
+
+    total = (damage + reproducibility + exploitability + affectedUsers + discoverability) / 5
+    ```
+
+    ### Adjust DREAD Scores
+
+    Fine-tune the risk assessment for your environment:
+
+    - **Damage Potential** (0-10): How severe is the impact?
+    - **Reproducibility** (0-10): How easily can the exploit be reproduced?
+    - **Exploitability** (0-10): How difficult is it to execute?
+    - **Affected Users** (0-10): How many users/systems are at risk?
+    - **Discoverability** (0-10): How easily can the vulnerability be found?
+
+    The total DREAD score updates in real-time as you adjust sliders.
+
+    ### Import the Vulnerability
+
+    Click **Import Vulnerability** to save it to your database. VulnTrack will:
+
+    - Create a vulnerability record with status "OPEN"
+    - Save DREAD scores to the database
+    - Parse affected systems (CPE strings) from CVE data
+    - Generate default mitigation steps
+    - Auto-approve if you're an Admin (Analysts require approval)
+    - Redirect you to the vulnerability detail page
+
+    <Info>
+    **Approval Workflow**: Vulnerabilities submitted by Analysts have status "PENDING" and are visible only to the creator and Admins until approved.
+    </Info>
+  </Step>
+
+  <Step title="Create a Manual Vulnerability">
+    For custom findings (like penetration test results), create vulnerabilities manually.
+
+    ### Navigate to Create Form
+
+    From the dashboard:
+    1. Click **Vulnerabilities** → **Add New**
+    2. Or navigate to: `http://localhost:3000/dashboard/vulnerabilities/new`
+
+    ### Fill in Basic Information
+
+    The form is located in `src/components/vulnerability/VulnerabilityForm.tsx`:
+
+    ```tsx
+    // Required fields
+    title: string         // e.g., "SQL Injection in Login Form"
+    description: string   // Detailed explanation of the vulnerability
+    severity: enum        // CRITICAL | HIGH | MEDIUM | LOW | INFO
+    status: enum          // OPEN | IN_PROGRESS | REMEDIATED | ACCEPTED
+    ```
+
+    ### Calculate DREAD Score
+
+    Use the **DREAD Calculator** on the right side of the form:
+
+    <CodeGroup>
+    ```text Example: SQL Injection
+    Damage: 9              (Can access entire database)
+    Reproducibility: 10    (Works every time)
+    Exploitability: 7      (Requires SQL knowledge)
+    Affected Users: 8      (All application users)
+    Discoverability: 6     (Requires code review)
+
+    Total DREAD Score: 8.0
+    ```
+
+    ```text Example: XSS Vulnerability
+    Damage: 5              (Limited to session hijacking)
+    Reproducibility: 9     (Easily reproducible)
+    Exploitability: 8      (Basic JavaScript knowledge)
+    Affected Users: 4      (Only users who click link)
+    Discoverability: 7     (Common vulnerability)
+
+    Total DREAD Score: 6.6
+    ```
+    </CodeGroup>
+
+    ### Apply STRIDE Classification
+
+    Check applicable threat categories:
+
+    - **Spoofing**: Can attacker impersonate users?
+    - **Tampering**: Can data be modified without authorization?
+    - **Repudiation**: Can actions be performed without audit trail?
+    - **Information Disclosure**: Can sensitive data be exposed?
+    - **Denial of Service**: Can services be disrupted?
+    - **Elevation of Privilege**: Can attacker gain unauthorized access?
+
+    The STRIDE model (from `src/components/scoring/StrideClassifier.tsx`) stores boolean flags:
+
+    ```typescript
+    {
+      spoofing: boolean
+      tampering: boolean
+      reputation: boolean  // Repudiation in the schema
+      informationDisclosure: boolean
+      denialOfService: boolean
+      elevationOfPrivilege: boolean
+    }
+    ```
+
+    ### Submit the Vulnerability
+
+    Click **Create Vulnerability**. The form calls this server action from `src/app/actions/vulnerabilities.ts`:
+
+    ```typescript
+    export async function createVulnerability(data: any) {
+      // Validates session and team membership
+      // Auto-creates team for first-time admins
+      // Sets approvalStatus: ADMIN → APPROVED, ANALYST → PENDING
+      // Saves DREAD and STRIDE scores to respective tables
+      // Logs audit trail
+      // Returns created vulnerability
+    }
+    ```
+  </Step>
+
+  <Step title="Manage the Vulnerability">
+    After creation, you'll see the vulnerability detail page with comprehensive information.
+
+    ### Key Actions
+
+    **Top Action Bar**:
+    - **Share**: Copy link to clipboard for team collaboration
+    - **Mark as Resolved**: Toggle status between OPEN and RESOLVED
+    - **Approve** (Admins only): Approve pending submissions from Analysts
+    - **Notifications**: Enable/disable alerts for this vulnerability
+
+    **Status Information Panel**:
+    - Current status with color-coded indicator
+    - Discovery and last updated timestamps
+    - **Assigned To**: Admins can click to assign team members
+    - Priority badge (auto-calculated)
+
+    ### Assignment Workflow
+
+    Admins can assign vulnerabilities to team members:
+
+    ```typescript
+    // From src/app/actions/vulnerabilities.ts
+    export async function assignVulnerability(vulnerabilityId: string, assigneeId: string | null) {
+      // Creates notification for assignee
+      // Sends email with vulnerability details
+      // Updates vulnerability record
+      // Logs audit trail
+    }
+    ```
+
+    The assignee receives:
+    - **In-app notification**: Shows in notifications panel
+    - **Email notification**: With direct link to vulnerability
+
+    ### Add Comments
+
+    Scroll to the **Comment Section** to collaborate:
+
+    1. Type your comment in the text area
+    2. Click **Post Comment**
+    3. Comments appear with author name and timestamp
+    4. All team members can view comments on approved vulnerabilities
+
+    Comments are stored in the `Comment` model:
+
+    ```prisma
+    model Comment {
+      id              String        @id @default(uuid())
+      content         String
+      userId          String
+      vulnerabilityId String
+      createdAt       DateTime      @default(now())
+    }
+    ```
+
+    ### Update Status
+
+    Track remediation progress:
+
+    1. Click **Mark as Resolved** when fixed
+    2. Status changes to "RESOLVED"
+    3. Audit log records the status change
+    4. Dashboard statistics update automatically
+
+    Available statuses (from `schema.prisma`):
+    - **OPEN**: Newly discovered
+    - **IN_PROGRESS**: Currently being fixed
+    - **REMEDIATED**: Fix has been applied
+    - **ACCEPTED**: Risk accepted, no fix planned
+    - **RESOLVED**: Fully resolved
+  </Step>
+
+  <Step title="Generate a Report">
+    Export vulnerability data for stakeholders.
+
+    ### Navigate to Reports
+
+    1. Go to **Dashboard** → **Quick Actions** → **Export Report**
+    2. Or navigate to: `http://localhost:3000/dashboard/reports`
+
+    ### Select Export Format
+
+    VulnTrack supports two formats:
+
+    <CodeGroup>
+    ```text PDF Report
+    - Executive summary
+    - Vulnerability tables with DREAD/CVSS scores
+    - Professional formatting for presentations
+    - Generated using jsPDF and jsPDF-AutoTable
+    ```
+
+    ```text CSV Export
+    - Complete vulnerability data
+    - Importable into Excel/Google Sheets
+    - Includes all metadata and custom fields
+    - Ideal for data analysis and pivoting
+    ```
+    </CodeGroup>
+
+    ### Filter Options
+
+    Customize your report:
+    - **Date Range**: Vulnerabilities created within time period
+    - **Severity**: Filter by CRITICAL, HIGH, MEDIUM, LOW, INFO
+    - **Status**: Include only specific statuses
+    - **Assigned To**: Filter by team member
+
+    Click **Generate Report** to download the file.
+  </Step>
+</Steps>
+
+## What's Next?
+
+<CardGroup cols={2}>
+  <Card title="Invite Team Members" icon="user-plus" href="/guides/team-management">
+    Generate invitation links and manage user roles
+  </Card>
+  <Card title="Configure Email" icon="envelope" href="/configuration/email">
+    Set up email notifications for your team
+  </Card>
+  <Card title="Understand Roles" icon="shield-halved" href="/guides/user-roles">
+    Learn about Admin, Analyst, and Viewer permissions
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Integrate VulnTrack with external tools
+  </Card>
+</CardGroup>
+
+## Common Workflows
+
+<AccordionGroup>
+  <Accordion title="Importing Multiple CVEs" icon="cloud-arrow-down">
+    For bulk imports, you can:
+
+    1. Use the CVE import page repeatedly (each import takes ~5 seconds)
+    2. Build a custom script using the `importCve` server action
+    3. Use the API endpoint (if enabled in your deployment)
+
+    Example script structure:
+    ```typescript
+    const cveIds = ['CVE-2024-1234', 'CVE-2024-5678']
+    
+    for (const cveId of cveIds) {
+      const result = await importCve(cveId)
+      if (result.success) {
+        await createVulnerability({ ...result.data })
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="Daily Vulnerability Triage" icon="list-check">
+    Recommended daily workflow for security teams:
+
+    1. **Morning Review**: Check dashboard for new vulnerabilities
+    2. **Prioritize**: Sort by DREAD score and CVSS
+    3. **Assign**: Distribute to appropriate team members
+    4. **Track**: Monitor status changes throughout the day
+    5. **Review**: Check resolved vulnerabilities before closing
+  </Accordion>
+
+  <Accordion title="Handling Pending Approvals" icon="gavel">
+    For Admins managing Analyst submissions:
+
+    1. Navigate to **Vulnerabilities** page
+    2. Filter by **Approval Status: PENDING** (if filter exists)
+    3. Click on each pending vulnerability
+    4. Review DREAD scores and description
+    5. Click **Approve Vulnerability** if valid
+    6. Or comment with feedback if changes needed
+  </Accordion>
+</AccordionGroup>
+
+<Warning>
+**Security Reminder**: VulnTrack stores sensitive security data. Always:
+- Use strong passwords
+- Enable HTTPS in production
+- Keep PostgreSQL access restricted
+- Regularly backup your database
+- Review audit logs for suspicious activity
+</Warning>
+
+## Need Help?
+
+<Card title="Join the Community" icon="github" href="https://github.com/ogdmerlin/vulntrack">
+  Report issues, request features, or contribute to the project on GitHub
+</Card>

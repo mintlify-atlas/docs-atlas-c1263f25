@@ -1,0 +1,157 @@
+---
+title: Environment Variables
+description: Configure VulnTrack using environment variables for database, authentication, email, and external integrations
+---
+
+VulnTrack uses environment variables to configure core services and integrations. Create a `.env` file in the root directory with the following variables.
+
+## Required Variables
+
+These variables must be set for VulnTrack to function properly.
+
+<ParamField path="DATABASE_URL" type="string" required>
+  PostgreSQL database connection string.
+  
+  **Format:** `postgresql://USER:PASSWORD@HOST:PORT/DATABASE`
+  
+  **Example:** `postgresql://postgres:password@localhost:5432/vulntrack`
+</ParamField>
+
+<ParamField path="NEXTAUTH_URL" type="string" required>
+  The canonical URL of your VulnTrack deployment. Used by NextAuth.js for redirects and callbacks.
+  
+  **Development:** `http://localhost:3000`
+  
+  **Production:** `https://vulntrack.yourdomain.com`
+</ParamField>
+
+<ParamField path="NEXTAUTH_SECRET" type="string" required>
+  Secret key used to encrypt JWT tokens and session cookies.
+  
+  Generate using: `openssl rand -base64 32`
+  
+  <Warning>
+    Keep this secret secure. Changing it will invalidate all existing user sessions.
+  </Warning>
+</ParamField>
+
+<ParamField path="NEXT_PUBLIC_APP_URL" type="string" required>
+  Public-facing URL used in email templates and client-side redirects.
+  
+  **Development:** `http://localhost:3000`
+  
+  **Production:** `https://vulntrack.yourdomain.com`
+  
+  <Note>
+    Must match `NEXTAUTH_URL` in most cases.
+  </Note>
+</ParamField>
+
+## Email Configuration
+
+Required for sending invitations, password resets, and notifications.
+
+<ParamField path="RESEND_API_KEY" type="string">
+  API key from [Resend](https://resend.com) for email delivery.
+  
+  **Location:** Get from Resend Dashboard > API Keys
+  
+  If not set, emails will be logged to console instead of sent (mock mode).
+</ParamField>
+
+<ParamField path="EMAIL_FROM" type="string" default="VulnTrack System <system@vulntrack.org>">
+  Sender email address and display name for outgoing emails.
+  
+  **Format:** `Display Name <email@domain.com>`
+  
+  **Example:** `VulnTrack Security <noreply@yourdomain.com>`
+  
+  <Warning>
+    The domain must be verified in your Resend account before emails can be sent.
+  </Warning>
+</ParamField>
+
+## External API Integrations
+
+Optional integrations for CVE data enrichment.
+
+<ParamField path="NIST_API_KEY" type="string">
+  API key for [NIST National Vulnerability Database](https://nvd.nist.gov/developers).
+  
+  Used to fetch CVE data from the official NVD API. Rate limits are higher with an API key.
+  
+  **Register:** https://nvd.nist.gov/developers/request-an-api-key
+</ParamField>
+
+<ParamField path="VULNCHECK_API_KEY" type="string">
+  API key for [VulnCheck](https://vulncheck.com) vulnerability intelligence.
+  
+  Provides enhanced CVE data, exploitability indicators, and real-time threat intelligence.
+  
+  **Get Started:** https://vulncheck.com
+</ParamField>
+
+## Internal Configuration
+
+<ParamField path="NODE_ENV" type="string" default="development">
+  Node.js environment mode.
+  
+  **Values:**
+  - `development` - Enables debug logging and hot reload
+  - `production` - Optimized build with caching
+  - `test` - For automated testing
+</ParamField>
+
+## Example Configuration
+
+Create a `.env` file in the root directory:
+
+```bash .env
+# Database
+DATABASE_URL="postgresql://vulntrack_user:secure_password@localhost:5432/vulntrack"
+
+# NextAuth
+NEXTAUTH_URL="http://localhost:3000"
+NEXTAUTH_SECRET="your-generated-secret-key-here"
+
+# Application
+NEXT_PUBLIC_APP_URL="http://localhost:3000"
+
+# Email (Optional)
+RESEND_API_KEY="re_your_api_key_here"
+EMAIL_FROM="VulnTrack <noreply@yourdomain.com>"
+
+# External APIs (Optional)
+NIST_API_KEY="your-nist-api-key"
+VULNCHECK_API_KEY="your-vulncheck-api-key"
+```
+
+## Production Checklist
+
+Before deploying to production:
+
+<Steps>
+  <Step title="Generate secure secrets">
+    Use `openssl rand -base64 32` to generate a strong `NEXTAUTH_SECRET`.
+  </Step>
+  
+  <Step title="Update URLs">
+    Set `NEXTAUTH_URL` and `NEXT_PUBLIC_APP_URL` to your production domain.
+  </Step>
+  
+  <Step title="Configure email">
+    Add `RESEND_API_KEY` and verify your sender domain in Resend.
+  </Step>
+  
+  <Step title="Secure database">
+    Use a managed PostgreSQL instance with SSL enabled and strong credentials.
+  </Step>
+  
+  <Step title="Environment isolation">
+    Never commit `.env` files to version control. Use platform-specific secret management.
+  </Step>
+</Steps>
+
+<Warning>
+  **Security Note:** Never expose `NEXTAUTH_SECRET`, `RESEND_API_KEY`, or database credentials in client-side code or public repositories.
+</Warning>

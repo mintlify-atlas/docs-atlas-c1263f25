@@ -1,0 +1,262 @@
+---
+title: 'CVSS v3.1 Scoring'
+description: 'Learn how VulnTrack implements CVSS v3.1 vulnerability scoring to assess risk and prioritize remediation'
+---
+
+## Overview
+
+The Common Vulnerability Scoring System (CVSS) is an industry-standard framework for assessing the severity of security vulnerabilities. VulnTrack implements **CVSS v3.1**, which provides a standardized method to capture the principal characteristics of a vulnerability and produce a numerical score reflecting its severity.
+
+## CVSS Score Range
+
+CVSS scores range from **0.0 to 10.0**, with higher scores indicating greater severity:
+
+| Score Range | Severity |
+|-------------|----------|
+| 0.0 | None |
+| 0.1 - 3.9 | Low |
+| 4.0 - 6.9 | Medium |
+| 7.0 - 8.9 | High |
+| 9.0 - 10.0 | Critical |
+
+## CVSS Vector String
+
+VulnTrack stores CVSS scores using the standard vector string format:
+
+```
+CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
+```
+
+This compact representation encodes all the metrics that contribute to the final score.
+
+## Base Metric Groups
+
+CVSS v3.1 consists of three metric groups. VulnTrack primarily focuses on **Base Metrics**, which represent the intrinsic characteristics of a vulnerability that are constant over time and across user environments.
+
+### Exploitability Metrics
+
+These metrics capture how easily a vulnerability can be exploited.
+
+<Accordion title="Attack Vector (AV)">
+  This metric describes the context by which vulnerability exploitation is possible.
+
+  <ParamField path="AV:N" type="Network">
+    The vulnerability is exploitable remotely over a network. The attacker does not require access to the local network or physical proximity.
+    
+    **Example**: A SQL injection vulnerability in a public web application
+  </ParamField>
+
+  <ParamField path="AV:A" type="Adjacent Network">
+    The vulnerability requires access to the local network (e.g., LAN, Bluetooth).
+    
+    **Example**: An ARP spoofing attack on a local network
+  </ParamField>
+
+  <ParamField path="AV:L" type="Local">
+    The attacker must have local access to the system or requires local execution.
+    
+    **Example**: A privilege escalation vulnerability requiring shell access
+  </ParamField>
+
+  <ParamField path="AV:P" type="Physical">
+    The attacker requires physical access to the device.
+    
+    **Example**: A vulnerability in a hardware security module
+  </ParamField>
+</Accordion>
+
+<Accordion title="Attack Complexity (AC)">
+  This metric describes the conditions beyond the attacker's control that must exist to exploit the vulnerability.
+
+  <ParamField path="AC:L" type="Low">
+    No special conditions exist. The attacker can expect repeatable success.
+    
+    **Example**: A buffer overflow with a publicly available exploit
+  </ParamField>
+
+  <ParamField path="AC:H" type="High">
+    Successful exploitation depends on conditions beyond the attacker's control (e.g., race condition, information gathering).
+    
+    **Example**: A timing-based side-channel attack requiring precise conditions
+  </ParamField>
+</Accordion>
+
+<Accordion title="Privileges Required (PR)">
+  This metric describes the level of privileges an attacker must possess before successfully exploiting the vulnerability.
+
+  <ParamField path="PR:N" type="None">
+    The attacker requires no authentication or privileges.
+    
+    **Example**: Unauthenticated remote code execution
+  </ParamField>
+
+  <ParamField path="PR:L" type="Low">
+    The attacker requires basic user privileges.
+    
+    **Example**: An authenticated user can read other users' data
+  </ParamField>
+
+  <ParamField path="PR:H" type="High">
+    The attacker requires significant privileges (e.g., administrator).
+    
+    **Example**: A vulnerability requiring admin access to exploit
+  </ParamField>
+</Accordion>
+
+<Accordion title="User Interaction (UI)">
+  This metric captures whether exploitation requires user participation.
+
+  <ParamField path="UI:N" type="None">
+    The vulnerability can be exploited without any user interaction.
+    
+    **Example**: A worm that spreads automatically
+  </ParamField>
+
+  <ParamField path="UI:R" type="Required">
+    Exploitation requires a user to perform some action.
+    
+    **Example**: A phishing attack requiring the user to click a malicious link
+  </ParamField>
+</Accordion>
+
+### Scope (S)
+
+This metric captures whether exploitation of the vulnerability affects resources beyond its security scope.
+
+<ParamField path="S:U" type="Unchanged">
+  The exploited vulnerability can only affect resources managed by the same security authority.
+</ParamField>
+
+<ParamField path="S:C" type="Changed">
+  The exploited vulnerability can affect resources beyond the authorization scope.
+  
+  **Example**: A VM escape vulnerability allowing access to the host system
+</ParamField>
+
+### Impact Metrics
+
+These metrics capture the direct impact of a successful exploit on the CIA triad.
+
+<Accordion title="Confidentiality Impact (C)">
+  Measures the impact to data confidentiality.
+
+  <ParamField path="C:N" type="None">
+    No impact to confidentiality.
+  </ParamField>
+
+  <ParamField path="C:L" type="Low">
+    Some information disclosure, but limited access.
+  </ParamField>
+
+  <ParamField path="C:H" type="High">
+    Total information disclosure, providing access to all system data.
+  </ParamField>
+</Accordion>
+
+<Accordion title="Integrity Impact (I)">
+  Measures the impact to data integrity.
+
+  <ParamField path="I:N" type="None">
+    No impact to integrity.
+  </ParamField>
+
+  <ParamField path="I:L" type="Low">
+    Modification of some data is possible, but the attacker has limited control.
+  </ParamField>
+
+  <ParamField path="I:H" type="High">
+    Total compromise of system integrity with the ability to modify any data.
+  </ParamField>
+</Accordion>
+
+<Accordion title="Availability Impact (A)">
+  Measures the impact to system availability.
+
+  <ParamField path="A:N" type="None">
+    No impact to availability.
+  </ParamField>
+
+  <ParamField path="A:L" type="Low">
+    Reduced performance or interruptions in resource availability.
+  </ParamField>
+
+  <ParamField path="A:H" type="High">
+    Total loss of availability, with the attacker able to fully deny access.
+  </ParamField>
+</Accordion>
+
+## Data Storage
+
+In VulnTrack's database schema, CVSS data is stored in the `Vulnerability` model:
+
+```prisma
+model Vulnerability {
+  id                  String   @id @default(uuid())
+  title               String
+  description         String
+  severity            String
+  
+  // CVSS fields
+  cvssScore           Float?
+  attackVector        String?
+  attackComplexity    String?
+  privilegesRequired  String?
+  
+  // Additional CVSS metrics stored in JSON
+  impactAssessment    String? // JSON serialized
+  
+  // ... other fields
+}
+```
+
+## Example: Calculating a CVSS Score
+
+Consider a remote code execution vulnerability in a web application:
+
+```typescript
+const cvssVector = "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H";
+
+const vulnerability = {
+  cvssScore: 9.8,
+  severity: "CRITICAL",
+  attackVector: "Network",
+  attackComplexity: "Low",
+  privilegesRequired: "None"
+};
+```
+
+**Analysis**:
+- **AV:N** - Exploitable remotely over the internet
+- **AC:L** - Easy to exploit with public exploits available
+- **PR:N** - No authentication required
+- **UI:N** - No user interaction needed
+- **S:U** - Impact limited to the vulnerable component
+- **C:H/I:H/A:H** - Complete compromise of confidentiality, integrity, and availability
+
+**Result**: CVSS Score of **9.8 (Critical)** - Immediate remediation required
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Standard Vectors" icon="code">
+    Always store the complete CVSS vector string to ensure reproducibility and transparency in scoring decisions.
+  </Card>
+  
+  <Card title="Consider Context" icon="shield">
+    While CVSS provides objective severity, always consider your specific environment and risk tolerance.
+  </Card>
+  
+  <Card title="Regular Updates" icon="clock">
+    Review CVSS scores when new information about a vulnerability becomes available.
+  </Card>
+  
+  <Card title="Combine Frameworks" icon="layer-group">
+    Use CVSS alongside DREAD and STRIDE for comprehensive risk assessment.
+  </Card>
+</CardGroup>
+
+## Resources
+
+- [Official CVSS v3.1 Specification](https://www.first.org/cvss/v3.1/specification-document)
+- [CVSS Calculator](https://www.first.org/cvss/calculator/3.1)
+- [National Vulnerability Database](https://nvd.nist.gov/)

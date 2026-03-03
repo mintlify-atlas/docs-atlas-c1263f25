@@ -1,0 +1,516 @@
+---
+title: 'Users'
+description: 'User management, invitations, and role administration'
+---
+
+## Overview
+
+User management actions handle user accounts, team invitations, role assignments, and profile updates. All operations are scoped to the admin's team for multi-tenant isolation.
+
+Actions are located in:
+- `src/app/actions/admin.ts` - Admin operations
+- `src/app/actions/user.ts` - Profile operations
+- `src/app/actions/auth.ts` - Registration
+
+## getUsers
+
+Retrieve all users and pending invitations for the admin's team.
+
+```typescript
+import { getUsers } from '@/app/actions/admin'
+
+const result = await getUsers()
+```
+
+**Authorization:** Admin role required
+
+**Response:**
+
+<ResponseField name="success" type="boolean">
+  Operation status
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Combined array of users and pending invitations, sorted by creation date:
+  
+  **User Objects:**
+  - `id`: User ID
+  - `name`: Display name
+  - `email`: Email address
+  - `role`: User role
+  - `status`: Account status ("ACTIVE" | "PENDING" | "SUSPENDED")
+  - `image`: Profile image URL
+  - `createdAt`: Registration date
+  - `_count.vulnerabilities`: Number of vulnerabilities created
+  - `isInvitation`: `false`
+  
+  **Invitation Objects:**
+  - `id`: Invitation ID
+  - `name`: "Pending User"
+  - `email`: Invited email
+  - `role`: Assigned role
+  - `status`: "PENDING"
+  - `image`: `null`
+  - `createdAt`: Invitation date
+  - `_count.vulnerabilities`: `0`
+  - `isInvitation`: `true`
+</ResponseField>
+
+## createUser
+
+Create a new user directly (without invitation flow).
+
+```typescript
+import { createUser } from '@/app/actions/admin'
+
+const result = await createUser({
+  name: 'John Doe',
+  email: 'john@example.com',
+  password: 'SecurePass123!',
+  role: 'CONTRIBUTOR',
+  status: 'ACTIVE'
+})
+```
+
+**Authorization:** Admin role required
+
+<ParamField path="name" type="string" required>
+  User's display name
+</ParamField>
+
+<ParamField path="email" type="string" required>
+  User's email address (must be unique)
+</ParamField>
+
+<ParamField path="password" type="string" required>
+  Initial password (will be hashed with bcrypt, cost factor 12)
+</ParamField>
+
+<ParamField path="role" type="'ADMIN' | 'CONTRIBUTOR' | 'VIEWER'" required>
+  User's role within the team
+</ParamField>
+
+<ParamField path="status" type="'ACTIVE' | 'SUSPENDED'" required>
+  Account status
+</ParamField>
+
+**Behavior:**
+
+- User is automatically assigned to the admin's team
+- `isOnboarded` is set to `true` (skips onboarding flow)
+- `createdById` is set to the admin's user ID
+- Duplicate email returns error
+
+**Response:**
+
+<ResponseField name="data" type="object">
+  The created user object
+</ResponseField>
+
+**Errors:**
+
+- "Admin must belong to a team to create users."
+- "A user with this email already exists"
+- "You must be an admin to create users"
+
+## createInvitation
+
+Invite a user to join the team via email.
+
+```typescript
+import { createInvitation } from '@/app/actions/admin'
+
+const result = await createInvitation('user@example.com', 'CONTRIBUTOR')
+```
+
+**Authorization:** Admin role required
+
+<ParamField path="email" type="string" required>
+  Email address to invite
+</ParamField>
+
+<ParamField path="role" type="'ADMIN' | 'CONTRIBUTOR' | 'VIEWER'" required>
+  Role to assign when user registers
+</ParamField>
+
+**Behavior:**
+
+1. Checks if email is already registered (returns error if exists)
+2. Deletes any existing invitation for this email (allows re-inviting)
+3. Generates a secure UUID token
+4. Creates invitation with 24-hour expiration
+5. Sends invitation email via Resend
+6. Creates audit log entry
+
+**Email Contents:**
+
+- Subject: "You've been invited to VulnTrack"
+- Includes invitation link: `{APP_URL}/register?token={token}`
+- Plain text fallback included
+
+**Response:**
+
+<ResponseField name="success" type="boolean">
+  Whether invitation was created
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  "Invitation sent successfully"
+</ResponseField>
+
+<ResponseField name="data.token" type="string">
+  The generated invitation token (UUID)
+</ResponseField>
+
+<ResponseField name="data.link" type="string">
+  Relative path to registration: `/register?token={token}`
+</ResponseField>
+
+**Token Structure:**
+
+```typescript
+{
+  id: string, // UUID
+  email: string,
+  token: string, // UUID
+  role: string,
+  teamId: string, // Inviter's team
+  inviterId: string, // Admin who sent invite
+  expiresAt: Date, // 24 hours from creation
+  createdAt: Date
+}
+```
+
+## deleteInvitation
+
+Revoke a pending invitation.
+
+```typescript
+import { deleteInvitation } from '@/app/actions/admin'
+
+const result = await deleteInvitation('invitation_id')
+```
+
+**Authorization:** Admin role required
+
+<ParamField path="invitationId" type="string" required>
+  ID of the invitation to revoke
+</ParamField>
+
+**Authorization:**
+
+- Verifies admin and invitation belong to the same team
+- Returns "Unauthorized access to invitation" for cross-team attempts
+
+**Audit Log:**
+
+Records: `DELETE_INVITATION` with email address
+
+## updateUser
+
+Update user account details.
+
+```typescript
+import { updateUser } from '@/app/actions/admin'
+
+const result = await updateUser('user_id', {
+  name: 'Jane Smith',
+  role: 'ADMIN',
+  status: 'ACTIVE'
+})
+```
+
+**Authorization:** Admin role required
+
+<ParamField path="userId" type="string" required>
+  ID of user to update
+</ParamField>
+
+<ParamField path="data.name" type="string">
+  Updated display name
+</ParamField>
+
+<ParamField path="data.role" type="string">
+  Updated role
+</ParamField>
+
+<ParamField path="data.status" type="string">
+  Updated account status
+</ParamField>
+
+**Authorization:**
+
+- Admin and target user must be in the same team
+- Returns "Unauthorized access to user" for cross-team attempts
+
+<Note>
+  Email updates are intentionally disabled due to authentication implications. To change a user's email, they must register a new account.
+</Note>
+
+## updateUserRole
+
+Update only a user's role (specialized operation).
+
+```typescript
+import { updateUserRole } from '@/app/actions/admin'
+
+const result = await updateUserRole('user_id', 'ADMIN')
+```
+
+**Authorization:** Admin role required
+
+<ParamField path="userId" type="string" required>
+  ID of user to update
+</ParamField>
+
+<ParamField path="role" type="'ADMIN' | 'CONTRIBUTOR' | 'VIEWER'" required>
+  New role
+</ParamField>
+
+**Effect:**
+
+- Updates user's role immediately
+- User's JWT is refreshed on next request (no re-login needed)
+- Role change takes effect across all active sessions
+
+## deleteUser
+
+Delete a user account.
+
+```typescript
+import { deleteUser } from '@/app/actions/admin'
+
+const result = await deleteUser('user_id')
+```
+
+**Authorization:** Admin role required
+
+<ParamField path="userId" type="string" required>
+  ID of user to delete
+</ParamField>
+
+**Authorization:**
+
+- Admin and target user must be in the same team
+- Cannot delete users from other teams
+
+<Warning>
+  Deleting a user may leave orphaned vulnerabilities. Consider reassigning resources before deletion.
+</Warning>
+
+## updateProfile
+
+Update the current user's profile (non-admin operation).
+
+```typescript
+import { updateProfile } from '@/app/actions/user'
+
+const result = await updateProfile({
+  name: 'John Doe',
+  image: 'https://example.com/avatar.jpg'
+})
+```
+
+**Authorization:** Any authenticated user
+
+<ParamField path="name" type="string" required>
+  Updated display name
+</ParamField>
+
+<ParamField path="image" type="string">
+  Profile image URL
+</ParamField>
+
+**Effect:**
+
+- Updates user's name and profile image
+- Sets `isOnboarded: true` (completes onboarding)
+- Revalidates `/dashboard` and `/dashboard/settings`
+
+**Use Cases:**
+
+- Onboarding flow completion
+- Profile settings page
+- Avatar updates
+
+## Invitation Flow
+
+Complete invitation-based registration flow:
+
+### 1. Admin Creates Invitation
+
+```typescript
+const result = await createInvitation('newuser@example.com', 'CONTRIBUTOR')
+const inviteLink = result.data.link // /register?token=abc-123
+```
+
+### 2. User Receives Email
+
+Email contains link to registration page with token:
+
+```
+https://vulntrack.com/register?token=abc-123
+```
+
+### 3. User Registers
+
+```typescript
+import { registerUser } from '@/app/actions/auth'
+
+const result = await registerUser({
+  email: 'newuser@example.com', // Must match invitation
+  password: 'SecurePass123!',
+  name: 'New User',
+  token: 'abc-123' // From URL parameter
+})
+```
+
+### 4. System Processing
+
+- Validates token (checks expiration, email match)
+- Creates user with role from invitation
+- Assigns user to inviter's team
+- Deletes invitation record
+- Sets `createdById` to inviter's ID
+
+### 5. User Can Login
+
+User is now a team member with assigned role.
+
+## Rate Limiting
+
+User creation and invitation actions inherit rate limiting from the registration endpoint:
+
+- **Limit:** 5 attempts per minute per IP
+- **Window:** 60 seconds
+
+## Audit Trail
+
+All user management operations are logged:
+
+| Action | Event Type | Details |
+|--------|-----------|----------|
+| Create User | `CREATE_USER` | "User created by admin@example.com" |
+| Update User | `UPDATE_USER` | "User updated by admin@example.com" |
+| Update Role | `UPDATE_ROLE` | "Role updated to ADMIN" |
+| Delete User | `DELETE_USER` | "User deleted" |
+| Create Invitation | `CREATE_INVITATION` | "Invited user@example.com as CONTRIBUTOR" |
+| Delete Invitation | `DELETE_INVITATION` | "Invitation revoked for user@example.com" |
+
+## Example: User Management Dashboard
+
+```tsx
+'use client'
+
+import { useState, useTransition } from 'react'
+import {
+  getUsers,
+  createInvitation,
+  deleteUser,
+  deleteInvitation,
+  updateUserRole
+} from '@/app/actions/admin'
+
+export function UserManagement() {
+  const [users, setUsers] = useState([])
+  const [isPending, startTransition] = useTransition()
+
+  async function loadUsers() {
+    const result = await getUsers()
+    if (result.success) {
+      setUsers(result.data)
+    }
+  }
+
+  async function handleInvite(email: string, role: string) {
+    startTransition(async () => {
+      const result = await createInvitation(email, role)
+      if (result.success) {
+        alert(`Invitation sent! Link: ${result.data.link}`)
+        loadUsers() // Refresh to show pending invitation
+      } else {
+        alert(result.error)
+      }
+    })
+  }
+
+  async function handleRoleChange(userId: string, newRole: string) {
+    startTransition(async () => {
+      const result = await updateUserRole(userId, newRole)
+      if (result.success) {
+        loadUsers()
+      }
+    })
+  }
+
+  async function handleDelete(user: any) {
+    if (!confirm(`Delete ${user.email}?`)) return
+
+    startTransition(async () => {
+      const result = user.isInvitation
+        ? await deleteInvitation(user.id)
+        : await deleteUser(user.id)
+
+      if (result.success) {
+        loadUsers()
+      }
+    })
+  }
+
+  return (
+    <div>
+      <h1>Team Members</h1>
+      <button onClick={() => handleInvite('new@example.com', 'CONTRIBUTOR')}>
+        Invite User
+      </button>
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Role</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {users.map(user => (
+            <tr key={user.id}>
+              <td>{user.name}</td>
+              <td>{user.email}</td>
+              <td>
+                <select
+                  value={user.role}
+                  onChange={(e) => handleRoleChange(user.id, e.target.value)}
+                  disabled={user.isInvitation}
+                >
+                  <option value="ADMIN">Admin</option>
+                  <option value="CONTRIBUTOR">Contributor</option>
+                  <option value="VIEWER">Viewer</option>
+                </select>
+              </td>
+              <td>{user.status}</td>
+              <td>
+                <button onClick={() => handleDelete(user)}>
+                  {user.isInvitation ? 'Revoke' : 'Delete'}
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="lock" href="/api/authentication">
+    Learn about session management
+  </Card>
+  <Card title="Teams" icon="users" href="/api/teams">
+    Understand team isolation and structure
+  </Card>
+</CardGroup>

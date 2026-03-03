@@ -1,0 +1,347 @@
+---
+title: 'DREAD Scoring'
+description: 'Use the DREAD framework to assess vulnerabilities based on Damage, Reproducibility, Exploitability, Affected Users, and Discoverability'
+---
+
+## Overview
+
+DREAD is a risk assessment framework developed by Microsoft for rating security threats. Unlike CVSS, which focuses on technical characteristics, DREAD provides a more business-oriented view of risk by evaluating five key dimensions.
+
+VulnTrack implements DREAD scoring to complement CVSS, giving teams multiple perspectives on vulnerability severity.
+
+## DREAD Dimensions
+
+Each dimension is scored from **1 to 10**, where higher values indicate greater risk:
+
+<CardGroup cols={2}>
+  <Card title="Damage" icon="burst">
+    How severe is the damage if the vulnerability is exploited?
+  </Card>
+  
+  <Card title="Reproducibility" icon="rotate">
+    How easy is it to reproduce the attack?
+  </Card>
+  
+  <Card title="Exploitability" icon="bug">
+    How much effort is required to launch the attack?
+  </Card>
+  
+  <Card title="Affected Users" icon="users">
+    How many users or systems would be impacted?
+  </Card>
+  
+  <Card title="Discoverability" icon="magnifying-glass">
+    How easy is it to discover the vulnerability?
+  </Card>
+</CardGroup>
+
+## Scoring Guide
+
+<Accordion title="Damage Potential (D)">
+  Assesses the extent of damage if the vulnerability is exploited.
+
+  <ParamField path="10" type="High">
+    Complete system compromise, data destruction, or total unavailability.
+    
+    **Example**: Remote code execution with root/admin privileges
+  </ParamField>
+
+  <ParamField path="7-9" type="Medium-High">
+    Significant data leakage, serious service disruption, or partial system compromise.
+    
+    **Example**: SQL injection allowing access to sensitive customer data
+  </ParamField>
+
+  <ParamField path="4-6" type="Medium">
+    Limited information disclosure or temporary service disruption.
+    
+    **Example**: Exposure of non-sensitive configuration data
+  </ParamField>
+
+  <ParamField path="1-3" type="Low">
+    Minimal impact, no sensitive data exposure, negligible disruption.
+    
+    **Example**: Information leak revealing software version
+  </ParamField>
+</Accordion>
+
+<Accordion title="Reproducibility (R)">
+  Measures how consistently the vulnerability can be exploited.
+
+  <ParamField path="10" type="Always">
+    The attack can be reproduced every time without special conditions.
+    
+    **Example**: A buffer overflow with a reliable public exploit
+  </ParamField>
+
+  <ParamField path="7-9" type="Usually">
+    The attack succeeds most of the time with minor variations.
+    
+    **Example**: A race condition that succeeds 80% of the time
+  </ParamField>
+
+  <ParamField path="4-6" type="Sometimes">
+    The attack requires specific timing or conditions.
+    
+    **Example**: A TOCTOU vulnerability requiring precise timing
+  </ParamField>
+
+  <ParamField path="1-3" type="Rarely">
+    Exploitation is difficult and unreliable.
+    
+    **Example**: A complex heap corruption requiring specific memory layout
+  </ParamField>
+</Accordion>
+
+<Accordion title="Exploitability (E)">
+  Evaluates the technical skill and effort required to exploit the vulnerability.
+
+  <ParamField path="10" type="Very Easy">
+    No special tools or skills required. Exploit is automated or publicly available.
+    
+    **Example**: A default credential vulnerability with known username/password
+  </ParamField>
+
+  <ParamField path="7-9" type="Easy">
+    Requires basic tools and moderate technical knowledge.
+    
+    **Example**: XSS vulnerability exploitable with standard payloads
+  </ParamField>
+
+  <ParamField path="4-6" type="Moderate">
+    Requires specialized tools and significant technical expertise.
+    
+    **Example**: Binary exploitation requiring custom shellcode
+  </ParamField>
+
+  <ParamField path="1-3" type="Difficult">
+    Requires advanced skills, custom tools, or insider knowledge.
+    
+    **Example**: A sophisticated side-channel attack
+  </ParamField>
+</Accordion>
+
+<Accordion title="Affected Users (A)">
+  Estimates the percentage or number of users impacted by the vulnerability.
+
+  <ParamField path="10" type="All Users">
+    The vulnerability affects 100% of users or critical infrastructure.
+    
+    **Example**: A vulnerability in the authentication system affecting all users
+  </ParamField>
+
+  <ParamField path="7-9" type="Many Users">
+    The vulnerability affects 50-99% of users or major functionality.
+    
+    **Example**: A vulnerability in a commonly used feature
+  </ParamField>
+
+  <ParamField path="4-6" type="Some Users">
+    The vulnerability affects 10-50% of users or specific user segments.
+    
+    **Example**: A vulnerability in an optional module
+  </ParamField>
+
+  <ParamField path="1-3" type="Few Users">
+    The vulnerability affects less than 10% of users or rarely used functionality.
+    
+    **Example**: A vulnerability in a deprecated API endpoint
+  </ParamField>
+</Accordion>
+
+<Accordion title="Discoverability (D)">
+  Assesses how easily an attacker can find the vulnerability.
+
+  <ParamField path="10" type="Very Easy">
+    The vulnerability is publicly known or obvious to any attacker.
+    
+    **Example**: A CVE with public exploits and scanner signatures
+  </ParamField>
+
+  <ParamField path="7-9" type="Easy">
+    The vulnerability can be found with standard scanning tools.
+    
+    **Example**: An outdated library version detectable by vulnerability scanners
+  </ParamField>
+
+  <ParamField path="4-6" type="Moderate">
+    The vulnerability requires targeted investigation or source code analysis.
+    
+    **Example**: A logic flaw in business workflow
+  </ParamField>
+
+  <ParamField path="1-3" type="Difficult">
+    The vulnerability is obscure and requires deep knowledge of the system.
+    
+    **Example**: A subtle timing vulnerability in cryptographic implementation
+  </ParamField>
+</Accordion>
+
+## Data Storage
+
+DREAD scores are stored in a dedicated table in VulnTrack's database:
+
+```prisma
+model DreadScore {
+  id              String        @id @default(uuid())
+  damage          Int           // 1-10
+  reproducibility Int           // 1-10
+  exploitability  Int           // 1-10
+  affectedUsers   Int           // 1-10
+  discoverability Int           // 1-10
+  total           Float         // Average of all dimensions
+  
+  vulnerabilityId String        @unique
+  vulnerability   Vulnerability @relation(fields: [vulnerabilityId], references: [id], onDelete: Cascade)
+}
+```
+
+The `total` field represents the average DREAD score:
+
+```typescript
+total = (damage + reproducibility + exploitability + affectedUsers + discoverability) / 5
+```
+
+## Automatic CVSS to DREAD Mapping
+
+VulnTrack can automatically generate DREAD scores from CVSS vectors using intelligent mapping:
+
+```typescript
+interface DreadScore {
+  damage: number
+  reproducibility: number
+  exploitability: number
+  affectedUsers: number
+  discoverability: number
+  total: number
+}
+
+export function mapCvssToDread(cvssVector: string): DreadScore {
+  const score: DreadScore = {
+    damage: 5,
+    reproducibility: 5,
+    exploitability: 5,
+    affectedUsers: 5,
+    discoverability: 5,
+    total: 5
+  }
+
+  if (!cvssVector) return score
+
+  // Example Vector: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
+
+  // 1. Exploitability -> Attack Vector (AV)
+  if (cvssVector.includes("AV:N")) score.exploitability = 9 // Network
+  else if (cvssVector.includes("AV:A")) score.exploitability = 7 // Adjacent
+  else if (cvssVector.includes("AV:L")) score.exploitability = 5 // Local
+  else if (cvssVector.includes("AV:P")) score.exploitability = 2 // Physical
+
+  // 2. Reproducibility -> Attack Complexity (AC)
+  if (cvssVector.includes("AC:L")) score.reproducibility = 9
+  else if (cvssVector.includes("AC:H")) score.reproducibility = 4
+
+  // 3. Discoverability -> Privileges Required (PR)
+  if (cvssVector.includes("PR:N")) score.discoverability = 9
+  else if (cvssVector.includes("PR:L")) score.discoverability = 6
+  else if (cvssVector.includes("PR:H")) score.discoverability = 3
+
+  // 4. Affected Users -> User Interaction (UI) & Scope (S)
+  if (cvssVector.includes("UI:N")) score.affectedUsers = 8
+  else if (cvssVector.includes("UI:R")) score.affectedUsers = 5
+  
+  if (cvssVector.includes("S:C")) score.affectedUsers += 2
+  score.affectedUsers = Math.min(score.affectedUsers, 10)
+
+  // 5. Damage Potential -> CIA Impact
+  let impact = 0
+  if (cvssVector.includes("C:H")) impact += 3.3
+  else if (cvssVector.includes("C:L")) impact += 1.5
+  
+  if (cvssVector.includes("I:H")) impact += 3.3
+  else if (cvssVector.includes("I:L")) impact += 1.5
+  
+  if (cvssVector.includes("A:H")) impact += 3.3
+  else if (cvssVector.includes("A:L")) impact += 1.5
+  
+  score.damage = Math.min(Math.round(impact), 10)
+  if (score.damage === 0) score.damage = 1
+
+  // Calculate Total
+  score.total = (score.damage + score.reproducibility + score.exploitability + 
+                  score.affectedUsers + score.discoverability) / 5
+
+  return score
+}
+```
+
+## Example: DREAD Assessment
+
+Let's assess a SQL injection vulnerability:
+
+```typescript
+const dreadScore = {
+  damage: 9,              // Complete database compromise
+  reproducibility: 10,    // Always reproducible
+  exploitability: 8,      // Easy with standard SQL injection techniques
+  affectedUsers: 9,       // Affects all users whose data is in the database
+  discoverability: 7,     // Detectable with automated scanners
+  total: 8.6             // (9+10+8+9+7)/5
+}
+```
+
+### Mapping from CVSS
+
+If you have a CVSS vector for the same vulnerability:
+
+```typescript
+const cvssVector = "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N";
+const dreadScore = mapCvssToDread(cvssVector);
+
+// Result:
+// {
+//   damage: 7,              // High C+I impact (3.3+3.3=6.6, rounded to 7)
+//   reproducibility: 9,     // Low complexity (AC:L)
+//   exploitability: 9,      // Network accessible (AV:N)
+//   affectedUsers: 8,       // No user interaction (UI:N)
+//   discoverability: 9,     // No privileges required (PR:N)
+//   total: 8.4
+// }
+```
+
+## When to Use DREAD
+
+<CardGroup cols={2}>
+  <Card title="Risk Prioritization" icon="list-ol">
+    Use DREAD when you need to prioritize vulnerabilities based on business impact rather than just technical severity.
+  </Card>
+  
+  <Card title="Stakeholder Communication" icon="comments">
+    DREAD's business-friendly dimensions make it easier to explain risk to non-technical stakeholders.
+  </Card>
+  
+  <Card title="Custom Assessments" icon="sliders">
+    When your organization's specific context (user base, attack surface) matters more than industry standards.
+  </Card>
+  
+  <Card title="Threat Modeling" icon="diagram-project">
+    DREAD works well alongside STRIDE for comprehensive threat modeling sessions.
+  </Card>
+</CardGroup>
+
+## Best Practices
+
+1. **Be Consistent**: Establish clear scoring guidelines for your team to ensure consistency across assessments.
+
+2. **Document Rationale**: Always document why you assigned specific scores to each dimension.
+
+3. **Consider Your Environment**: Adjust scores based on your specific deployment, user base, and threat landscape.
+
+4. **Use with CVSS**: Don't replace CVSS with DREAD—use both frameworks for comprehensive assessment.
+
+5. **Regular Calibration**: Periodically review past DREAD scores with your team to ensure scoring remains consistent.
+
+## Related Frameworks
+
+- [CVSS Scoring](/scoring/cvss) - Industry-standard technical severity scoring
+- [STRIDE Threats](/scoring/stride) - Threat categorization framework
+- [Framework Comparison](/scoring/comparison) - Compare all three frameworks

@@ -1,0 +1,297 @@
+---
+title: Assigning Vulnerabilities to Team Members
+description: Guide for assigning vulnerabilities to team members, tracking progress, and managing workloads
+---
+
+VulnTrack's assignment system helps distribute security work across your team and track remediation progress. This guide covers how to assign vulnerabilities, manage workloads, and receive notifications.
+
+## Prerequisites
+
+<Note>
+  **Admin Role Required**: Only users with the ADMIN role can assign vulnerabilities to team members. Analysts and Viewers can view assignments but cannot modify them.
+</Note>
+
+## Assigning a Vulnerability
+
+<Steps>
+  <Step title="Navigate to Vulnerability Details">
+    Open the vulnerability you want to assign from the **Vulnerabilities** page.
+  </Step>
+  
+  <Step title="Locate the Assigned To Section">
+    In the right sidebar, find the **Status Information** card with the **Assigned To** field.
+  </Step>
+  
+  <Step title="Click to Assign">
+    Click on the assignee field. A dropdown will appear showing all team members.
+  </Step>
+  
+  <Step title="Select Team Member">
+    Choose a team member from the list. You'll see their:
+    - Name and email
+    - Current role (ADMIN, ANALYST, or VIEWER)
+  </Step>
+  
+  <Step title="Confirm Assignment">
+    The assignment happens immediately. The assignee receives:
+    - An in-app notification
+    - An email notification (if email is configured)
+  </Step>
+</Steps>
+
+## Assignment Workflow
+
+When you assign a vulnerability, VulnTrack automatically:
+
+### Creates a Notification
+
+```typescript
+// From vulnerabilities.ts:446-454
+await prisma.notification.create({
+  data: {
+    userId: assigneeId,
+    type: "ASSIGNMENT",
+    title: "New Vulnerability Assigned",
+    message: `You have been assigned to: ${vulnerability.title}`,
+    link: `/dashboard/vulnerabilities/${vulnerabilityId}`
+  }
+})
+```
+
+### Sends an Email
+
+The assignee receives an email with:
+- Vulnerability title
+- Direct link to the vulnerability details
+- Assignment notification timestamp
+
+```typescript
+// From vulnerabilities.ts:475-480
+await sendEmail({
+  to: assigneeUser.email,
+  subject: `New Assignment: ${vulnerability.title}`,
+  html: getAssignmentEmail(vulnerability.title, vulnerabilityId),
+  text: `You have been assigned to vulnerability: ${vulnerability.title}`
+})
+```
+
+### Logs the Action
+
+All assignments are recorded in the audit log:
+
+```typescript
+// From vulnerabilities.ts:490-491
+await logAudit("ASSIGN_VULNERABILITY", "Vulnerability", vulnerabilityId,
+  assigneeId ? `Assigned to user ${assigneeId}` : "Unassigned")
+```
+
+## Unassigning a Vulnerability
+
+To remove an assignment:
+
+<Steps>
+  <Step title="Open the Assignment Dropdown">
+    Click on the **Assigned To** field on the vulnerability details page.
+  </Step>
+  
+  <Step title="Select Unassign">
+    Click **Unassign** at the top of the dropdown menu.
+  </Step>
+  
+  <Step title="Confirm Removal">
+    The vulnerability returns to **Unassigned** status and appears in the unassigned queue.
+  </Step>
+</Steps>
+
+## Team Member Visibility
+
+### Loading Team Members
+
+VulnTrack automatically loads all team members when you open a vulnerability:
+
+```typescript
+// From vulnerabilities.ts:502-541
+export async function getTeamMembers() {
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { teamId: true, role: true }
+  })
+  
+  const members = await prisma.user.findMany({
+    where: { teamId: user.teamId },
+    select: { id: true, name: true, email: true, role: true }
+  })
+  
+  return { success: true, data: members }
+}
+```
+
+### Team Isolation
+
+<Warning>
+  **Security Enforcement**: You can only assign vulnerabilities to members of **your team**. Cross-team assignments are prevented at the database level:
+  
+  ```typescript
+  if (!assignee || assignee.teamId !== vulnerability.teamId) {
+    return { success: false, error: "Assignee must be in the same team" }
+  }
+  ```
+</Warning>
+
+## Tracking Assigned Work
+
+### View Your Assignments
+
+Team members can see vulnerabilities assigned to them by:
+1. Checking in-app notifications (bell icon in the header)
+2. Filtering the vulnerabilities list by assignee
+3. Receiving email notifications
+
+### Assignment Data Model
+
+From the Prisma schema:
+
+```prisma
+model Vulnerability {
+  // ... other fields
+  
+  assignedToId String?
+  assignedTo   User?    @relation("AssignedVulnerabilities", fields: [assignedToId], references: [id])
+}
+
+model User {
+  // ... other fields
+  
+  vulnerabilities Vulnerability[] // Created by user
+  assignedVulnerabilities Vulnerability[] @relation("AssignedVulnerabilities") // Assigned to user
+}
+```
+
+### What Assignees See
+
+On the vulnerability details page, assignees see:
+- Their name and role in the **Assigned To** section
+- Current status (OPEN, IN_PROGRESS, RESOLVED)
+- Proposed mitigation steps with priorities and ETAs
+- Activity timeline
+- Comment section for collaboration
+
+## Managing Workload
+
+### Best Practices
+
+<Tip>
+  **Balance Assignments**: Distribute vulnerabilities evenly across team members based on:
+  - Current workload
+  - Expertise and role
+  - Severity and priority of the vulnerability
+</Tip>
+
+<Tip>
+  **Use Status Updates**: Encourage assignees to update vulnerability status as they progress:
+  - OPEN → IN_PROGRESS when work begins
+  - IN_PROGRESS → RESOLVED when remediation is complete
+</Tip>
+
+<Tip>
+  **Leverage Comments**: Use the comment section on each vulnerability for:
+  - Progress updates
+  - Questions or blockers
+  - Sharing remediation approaches
+  - Requesting additional resources
+</Tip>
+
+### Reassigning Vulnerabilities
+
+If workload shifts or priorities change:
+1. Open the vulnerability details
+2. Click the **Assigned To** field
+3. Select a different team member
+4. The new assignee receives a notification immediately
+
+<Note>
+  **No Notification for Previous Assignee**: When reassigning, only the new assignee receives a notification. Consider adding a comment to inform the previous assignee.
+</Note>
+
+## Role-Based Permissions
+
+### ADMIN
+- Can assign/unassign any vulnerability in their team
+- Can reassign vulnerabilities between team members
+- Receives audit log entries for all assignments
+
+### ANALYST
+- Can view who is assigned to each vulnerability
+- Can update status on vulnerabilities assigned to them
+- Cannot modify assignments
+
+### VIEWER
+- Can view assignments on approved vulnerabilities only
+- Cannot modify assignments or status
+- Read-only access to vulnerability details
+
+See the [User Roles guide](/guides/user-roles) for complete permission details.
+
+## Notifications
+
+### In-App Notifications
+
+Assignees receive notifications accessible via the bell icon:
+- **Type**: ASSIGNMENT
+- **Title**: "New Vulnerability Assigned"
+- **Message**: Includes vulnerability title
+- **Link**: Direct link to vulnerability details
+- **Badge**: Unread notifications show a badge count
+
+### Email Notifications
+
+Email notifications are sent if:
+- SMTP is configured in your environment variables
+- The assignee has a valid email address
+- Email sending is enabled (default)
+
+Configure email in your `.env` file:
+
+```bash
+RESEND_API_KEY=your_resend_api_key
+EMAIL_FROM=noreply@yourdomain.com
+```
+
+See the [Email Configuration guide](/configuration/email) for setup details.
+
+## Troubleshooting
+
+### Cannot See Team Members
+
+**Problem**: The assignment dropdown is empty.
+
+**Solutions**:
+- Verify you're an admin user
+- Check that your team has other members
+- Ensure team members have completed onboarding
+
+### Assignment Not Saving
+
+**Problem**: Assignment appears to work but doesn't persist.
+
+**Solutions**:
+- Check browser console for errors
+- Verify the assignee is in the same team
+- Ensure you have admin permissions
+
+### No Email Received
+
+**Problem**: Assignee doesn't receive email notification.
+
+**Solutions**:
+- Verify SMTP configuration in environment variables
+- Check email address is valid in user profile
+- Review server logs for email sending errors
+- Test with Resend API key in development
+
+## Next Steps
+
+- Learn about [User Roles and Permissions](/guides/user-roles)
+- Set up [Team Management](/guides/team-management) for inviting members
+- Configure [Email Notifications](/configuration/email) for your team
+- Track progress using [Reports](/guides/generating-reports)

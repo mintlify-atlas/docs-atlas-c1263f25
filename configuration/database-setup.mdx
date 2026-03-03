@@ -1,0 +1,263 @@
+---
+title: Database Setup
+description: Configure PostgreSQL and initialize the Prisma schema for VulnTrack
+---
+
+VulnTrack uses PostgreSQL as its primary database with Prisma ORM for schema management and migrations.
+
+## Prerequisites
+
+<Steps>
+  <Step title="Install PostgreSQL">
+    VulnTrack requires PostgreSQL 12 or higher.
+    
+    **macOS:**
+    ```bash
+    brew install postgresql@16
+    brew services start postgresql@16
+    ```
+    
+    **Ubuntu/Debian:**
+    ```bash
+    sudo apt update
+    sudo apt install postgresql postgresql-contrib
+    sudo systemctl start postgresql
+    ```
+    
+    **Docker:**
+    ```bash
+    docker run -d \
+      --name vulntrack-db \
+      -e POSTGRES_PASSWORD=secure_password \
+      -e POSTGRES_USER=vulntrack_user \
+      -e POSTGRES_DB=vulntrack \
+      -p 5432:5432 \
+      postgres:16-alpine
+    ```
+  </Step>
+  
+  <Step title="Create database">
+    Connect to PostgreSQL and create the VulnTrack database:
+    
+    ```bash
+    # Using psql
+    psql -U postgres
+    ```
+    
+    ```sql
+    CREATE DATABASE vulntrack;
+    CREATE USER vulntrack_user WITH PASSWORD 'secure_password';
+    GRANT ALL PRIVILEGES ON DATABASE vulntrack TO vulntrack_user;
+    ```
+  </Step>
+  
+  <Step title="Configure connection string">
+    Add the database connection string to your `.env` file:
+    
+    ```bash .env
+    DATABASE_URL="postgresql://vulntrack_user:secure_password@localhost:5432/vulntrack"
+    ```
+    
+    <Warning>
+      For production, use SSL-enabled connections:
+      `postgresql://user:password@host:5432/db?sslmode=require`
+    </Warning>
+  </Step>
+</Steps>
+
+## Schema Initialization
+
+VulnTrack uses Prisma to manage the database schema.
+
+<Steps>
+  <Step title="Generate Prisma Client">
+    Generate the Prisma client based on `prisma/schema.prisma`:
+    
+    ```bash
+    npx prisma generate
+    ```
+    
+    This creates the TypeScript client for database queries.
+  </Step>
+  
+  <Step title="Push schema to database">
+    Initialize the database with the current schema:
+    
+    ```bash
+    npx prisma db push
+    ```
+    
+    This creates all tables, relations, and indexes defined in the Prisma schema.
+    
+    <Note>
+      `db push` is recommended for development. For production, use migrations (see below).
+    </Note>
+  </Step>
+  
+  <Step title="Verify setup">
+    Check that tables were created successfully:
+    
+    ```bash
+    npx prisma studio
+    ```
+    
+    This opens a browser-based database viewer at `http://localhost:5555`.
+  </Step>
+</Steps>
+
+## Database Schema
+
+VulnTrack's schema includes the following core models:
+
+### User Management
+- **User** - User accounts with role-based access control (ADMIN, ANALYST, VIEWER)
+- **Team** - Multi-tenant team workspaces
+- **Invitation** - Time-limited invitation tokens for secure onboarding
+
+### Vulnerability Tracking
+- **Vulnerability** - Core vulnerability records with CVE data
+- **DreadScore** - DREAD risk assessment scores
+- **StrideScore** - STRIDE threat modeling flags
+- **Comment** - Collaboration threads on vulnerabilities
+
+### Audit & Notifications
+- **AuditLog** - Comprehensive activity tracking
+- **Notification** - In-app notification system
+
+View the full schema at `prisma/schema.prisma` in your installation.
+
+## Migrations
+
+For production deployments, use Prisma migrations instead of `db push`.
+
+<Steps>
+  <Step title="Check migration status">
+    View applied migrations:
+    
+    ```bash
+    npx prisma migrate status
+    ```
+  </Step>
+  
+  <Step title="Apply migrations">
+    Run pending migrations:
+    
+    ```bash
+    npx prisma migrate deploy
+    ```
+    
+    This applies migrations from `prisma/migrations/` in order.
+  </Step>
+  
+  <Step title="Create new migration (development)">
+    After modifying `schema.prisma`, create a new migration:
+    
+    ```bash
+    npx prisma migrate dev --name description_of_changes
+    ```
+    
+    This generates SQL migration files and applies them to your database.
+  </Step>
+</Steps>
+
+## Package.json Scripts
+
+VulnTrack includes these database-related scripts:
+
+<ParamField path="build" type="script">
+  ```bash
+  npx prisma generate && npx prisma db push --accept-data-loss && next build
+  ```
+  
+  Generates Prisma client, pushes schema, and builds the Next.js application.
+</ParamField>
+
+<ParamField path="postinstall" type="script">
+  ```bash
+  prisma generate
+  ```
+  
+  Automatically generates Prisma client after `npm install`.
+</ParamField>
+
+## Seeding Data
+
+To populate the database with initial data:
+
+<Steps>
+  <Step title="Check for seed script">
+    If a `prisma/seed.ts` or `seed.js` file exists:
+    
+    ```bash
+    npx prisma db seed
+    ```
+    
+    This typically creates:
+    - An initial admin user
+    - Sample vulnerability data
+    - Default team configuration
+  </Step>
+  
+  <Step title="Manual admin creation">
+    If no seed script exists, create the first admin user through the registration flow.
+    
+    The first registered user automatically receives ADMIN privileges.
+  </Step>
+</Steps>
+
+## Backup & Restore
+
+### Backup Database
+
+```bash
+pg_dump -U vulntrack_user -h localhost vulntrack > backup.sql
+```
+
+### Restore Database
+
+```bash
+psql -U vulntrack_user -h localhost vulntrack < backup.sql
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Connection refused errors">
+    **Symptoms:** `Error: connect ECONNREFUSED 127.0.0.1:5432`
+    
+    **Solutions:**
+    - Verify PostgreSQL is running: `pg_isready`
+    - Check port availability: `lsof -i :5432`
+    - Ensure `DATABASE_URL` matches your PostgreSQL configuration
+  </Accordion>
+  
+  <Accordion title="Authentication failed">
+    **Symptoms:** `Error: password authentication failed for user`
+    
+    **Solutions:**
+    - Verify credentials in `DATABASE_URL`
+    - Check `pg_hba.conf` authentication method (should be `md5` or `scram-sha-256`)
+    - Reset user password in PostgreSQL: `ALTER USER vulntrack_user WITH PASSWORD 'new_password';`
+  </Accordion>
+  
+  <Accordion title="Migration conflicts">
+    **Symptoms:** `Error: Migration failed to apply`
+    
+    **Solutions:**
+    - Reset migration history: `npx prisma migrate resolve --applied <migration_name>`
+    - For development, reset database: `npx prisma migrate reset` (WARNING: deletes all data)
+    - For production, manually resolve conflicts and mark as applied
+  </Accordion>
+  
+  <Accordion title="Schema drift detected">
+    **Symptoms:** `Warning: Database schema is out of sync`
+    
+    **Solutions:**
+    - Development: Run `npx prisma db push` or create a new migration
+    - Production: Always use `prisma migrate deploy` to apply migrations
+  </Accordion>
+</AccordionGroup>
+
+<Warning>
+  **Production Warning:** Never use `prisma db push` or `prisma migrate reset` in production. These commands can cause data loss. Always use `prisma migrate deploy` for production deployments.
+</Warning>

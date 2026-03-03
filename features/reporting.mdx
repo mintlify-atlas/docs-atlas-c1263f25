@@ -1,0 +1,434 @@
+---
+title: Report Generation
+description: Generate professional security assessment reports in PDF, CSV, and HTML formats
+---
+
+## Overview
+
+VulnTrack's reporting engine generates executive and technical security reports with customizable sections, filters, and formatting. Reports can be exported in multiple formats for stakeholder communication and compliance documentation.
+
+<CardGroup cols={3}>
+  <Card title="PDF Reports" icon="file-pdf" color="#dc2626">
+    Professional formatted reports with tables, charts, and executive summaries
+  </Card>
+  <Card title="CSV Exports" icon="file-csv" color="#059669">
+    Raw data exports for analysis in Excel, Tableau, or custom tools
+  </Card>
+  <Card title="HTML Reports" icon="file-code" color="#2563eb">
+    Interactive web reports with styling for email and web distribution
+  </Card>
+</CardGroup>
+
+## Report Types
+
+VulnTrack supports four report templates:
+
+<Tabs>
+  <Tab title="Executive Summary">
+    High-level overview for leadership and stakeholders:
+    
+    - Vulnerability count by severity
+    - Risk assessment summary
+    - Remediation status overview
+    - Trend analysis (optional)
+    
+    **Best for**: Board presentations, quarterly reviews, compliance reporting
+  </Tab>
+  <Tab title="Technical Assessment">
+    Detailed technical findings for security teams:
+    
+    - Complete vulnerability details
+    - DREAD and CVSS scores
+    - Affected systems and assets
+    - Remediation procedures
+    - Technical references
+    
+    **Best for**: Security analysts, incident response teams, penetration testers
+  </Tab>
+  <Tab title="Compliance Report">
+    Audit-ready documentation:
+    
+    - Compliance framework mapping
+    - Control effectiveness
+    - Remediation tracking
+    - Audit trail evidence
+    
+    **Best for**: SOC 2, ISO 27001, PCI-DSS, HIPAA compliance audits
+  </Tab>
+  <Tab title="Custom Report">
+    Fully customizable report with selectable sections:
+    
+    - Choose specific sections
+    - Filter by severity, date, status
+    - Custom naming and branding
+    
+    **Best for**: Ad-hoc reporting, customer presentations, specific stakeholder needs
+  </Tab>
+</Tabs>
+
+## Generating Reports
+
+The report generation interface provides comprehensive filtering and customization:
+
+```typescript
+// From src/app/dashboard/reports/page.tsx:176
+async function generateReport() {
+  setGenerating(true)
+  const filteredVulns = getFilteredVulnerabilities()
+  const finalName = reportName || getDefaultReportName()
+  
+  try {
+    if (reportFormat === "pdf") {
+      await generatePDFReport(finalName, filteredVulns)
+    } else if (reportFormat === "csv") {
+      await generateCSVReport(finalName, filteredVulns)
+    } else if (reportFormat === "html") {
+      await generateHTMLReport(finalName, filteredVulns)
+    }
+    
+    // Save to report history
+    const newReport: GeneratedReport = {
+      id: `report-${Date.now()}`,
+      name: finalName,
+      type: reportType,
+      format: reportFormat.toUpperCase(),
+      dateGenerated: new Date(),
+      status: 'completed',
+      vulnerabilityCount: filteredVulns.length
+    }
+  } catch (error) {
+    console.error("Failed to generate report:", error)
+  }
+}
+```
+
+## Filtering Options
+
+Reports can be filtered across multiple dimensions:
+
+### Severity Filter
+
+```typescript
+if (severityFilter !== "all" && v.severity !== severityFilter) {
+  return false
+}
+```
+
+- **All Severities**: Include everything
+- **Critical Only**: Only CRITICAL vulnerabilities
+- **High & Above**: CRITICAL + HIGH
+- **Medium & Above**: CRITICAL + HIGH + MEDIUM
+
+### Date Range Filter
+
+```typescript
+// From src/app/dashboard/reports/page.tsx:141
+if (dateRange.from) {
+  const vulnDate = new Date(v.createdAt)
+  const fromDate = new Date(dateRange.from)
+  if (vulnDate < fromDate) return false
+}
+
+if (dateRange.to) {
+  const vulnDate = new Date(v.createdAt)
+  const toDate = new Date(dateRange.to)
+  if (vulnDate > toDate) return false
+}
+```
+
+<Note>
+Date filters are based on vulnerability creation date. Use these for quarterly reports, monthly summaries, or specific incident timeframes.
+</Note>
+
+## PDF Report Generation
+
+PDF reports use jsPDF with auto-table for professional formatting:
+
+```typescript
+// From src/app/dashboard/reports/page.tsx:214
+import jsPDF from "jspdf"
+import autoTable from "jspdf-autotable"
+
+async function generatePDFReport(name: string, vulns: Vulnerability[]) {
+  const doc = new jsPDF()
+  
+  // Header
+  doc.setFontSize(22)
+  doc.setTextColor(30, 41, 59)
+  doc.text("VulnTrack Security Report", 14, 22)
+  
+  doc.setFontSize(16)
+  doc.setTextColor(100, 116, 139)
+  doc.text(name, 14, 32)
+  
+  doc.setFontSize(10)
+  doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 40)
+  doc.text(`Total Vulnerabilities: ${vulns.length}`, 14, 46)
+}
+```
+
+### Executive Summary Section
+
+```typescript
+// From src/app/dashboard/reports/page.tsx:233
+if (includeSections.executiveSummary) {
+  const critical = vulns.filter(v => v.severity === "CRITICAL").length
+  const high = vulns.filter(v => v.severity === "HIGH").length
+  const medium = vulns.filter(v => v.severity === "MEDIUM").length
+  const low = vulns.filter(v => v.severity === "LOW").length
+  const open = vulns.filter(v => v.status === "OPEN").length
+  
+  doc.text(
+    `This report covers ${vulns.length} vulnerabilities identified.`,
+    14, yPos
+  )
+  doc.text(
+    `Critical: ${critical} | High: ${high} | Medium: ${medium} | Low: ${low}`,
+    14, yPos + 6
+  )
+  doc.text(
+    `Open Issues: ${open} | Resolved: ${vulns.length - open}`,
+    14, yPos + 12
+  )
+}
+```
+
+### Risk Assessment Section
+
+```typescript
+// From src/app/dashboard/reports/page.tsx:256
+if (includeSections.riskAssessment) {
+  const avgDread = vulns.reduce(
+    (sum, v) => sum + (v.dread?.total || 0), 
+    0
+  ) / vulns.length || 0
+  
+  doc.text(`Average DREAD Score: ${avgDread.toFixed(2)}`, 14, yPos)
+  
+  const riskLevel = 
+    avgDread > 7 ? "Critical" :
+    avgDread > 5 ? "High" :
+    avgDread > 3 ? "Medium" : "Low"
+  
+  doc.text(`Risk Level: ${riskLevel}`, 14, yPos + 6)
+}
+```
+
+### Vulnerability Table
+
+<Accordion title="View Table Generation Code">
+```typescript
+// From src/app/dashboard/reports/page.tsx:272
+if (includeSections.vulnerabilityDetails) {
+  const tableData = vulns.map(v => [
+    v.title.substring(0, 40) + (v.title.length > 40 ? "..." : ""),
+    v.severity,
+    v.status,
+    v.dread?.total?.toFixed(1) || "N/A",
+    new Date(v.createdAt).toLocaleDateString()
+  ])
+  
+  autoTable(doc, {
+    head: [['Vulnerability', 'Severity', 'Status', 'DREAD', 'Date']],
+    body: tableData,
+    startY: yPos,
+    styles: { fontSize: 9 },
+    headStyles: { fillColor: [30, 41, 59] }
+  })
+}
+```
+</Accordion>
+
+## CSV Export
+
+CSV exports provide raw data for external analysis:
+
+```typescript
+// From src/app/dashboard/reports/page.tsx:301
+async function generateCSVReport(name: string, vulns: Vulnerability[]) {
+  const headers = [
+    "ID", 
+    "Title", 
+    "Severity", 
+    "Status", 
+    "DREAD Score", 
+    "Created At", 
+    "Description"
+  ]
+  
+  const rows = vulns.map(v => [
+    v.id,
+    `"${v.title.replace(/"/g, '""')}"`, // Escape quotes
+    v.severity,
+    v.status,
+    v.dread?.total || 0,
+    v.createdAt,
+    `"${(v.description || "").replace(/"/g, '""')}"`
+  ])
+  
+  const csvContent = [
+    headers.join(","),
+    ...rows.map(row => row.join(","))
+  ].join("\n")
+  
+  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" })
+  const link = document.createElement("a")
+  link.href = URL.createObjectURL(blob)
+  link.download = `${name.replace(/[^a-z0-9]/gi, '_')}.csv`
+  link.click()
+}
+```
+
+<Warning>
+CSV exports include ALL vulnerability fields including descriptions. Be cautious when sharing CSV files as they may contain sensitive security information.
+</Warning>
+
+## HTML Reports
+
+HTML reports include inline styling for email and web distribution:
+
+```typescript
+// From src/app/dashboard/reports/page.tsx:334
+async function generateHTMLReport(name: string, vulns: Vulnerability[]) {
+  const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>${escapeHtml(name)}</title>
+  <style>
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+      background: #f8fafc;
+    }
+    .stats { 
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 20px;
+    }
+    .stat { 
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    table { 
+      width: 100%;
+      border-collapse: collapse;
+      background: white;
+    }
+    th { 
+      background: #1e293b;
+      color: white;
+      padding: 12px;
+      text-align: left;
+    }
+  </style>
+</head>
+<body>
+  <h1>VulnTrack Security Report</h1>
+  <div class="stats">
+    <div class="stat">
+      <h3>Critical</h3>
+      <p class="critical">${critical}</p>
+    </div>
+    <!-- Additional severity badges -->
+  </div>
+</body>
+</html>`
+  
+  const blob = new Blob([htmlContent], { type: "text/html" })
+  const link = document.createElement("a")
+  link.href = URL.createObjectURL(blob)
+  link.download = `${name.replace(/[^a-z0-9]/gi, '_')}.html`
+  link.click()
+}
+```
+
+## Report History
+
+Generated reports are tracked in local storage:
+
+```typescript
+// Save to history
+const newReport: GeneratedReport = {
+  id: `report-${Date.now()}`,
+  name: finalName,
+  type: reportType,
+  format: reportFormat.toUpperCase(),
+  dateGenerated: new Date(),
+  status: 'completed',
+  vulnerabilityCount: filteredVulns.length
+}
+
+const updatedReports = [newReport, ...generatedReports]
+localStorage.setItem('vulntrack_reports', JSON.stringify(updatedReports))
+```
+
+<Info>
+Report history is stored client-side for quick access. Re-download reports by clicking the download icon in the report table.
+</Info>
+
+## Report Templates
+
+Save report configurations as reusable templates:
+
+```typescript
+// From src/app/dashboard/reports/page.tsx:471
+function saveTemplate() {
+  const template = {
+    id: `template-${Date.now()}`,
+    name: reportName || getDefaultReportName(),
+    type: reportType,
+    format: reportFormat,
+    severityFilter,
+    includeSections,
+    savedAt: new Date().toISOString()
+  }
+  
+  const existingTemplates = JSON.parse(
+    localStorage.getItem('vulntrack_templates') || '[]'
+  )
+  
+  localStorage.setItem(
+    'vulntrack_templates',
+    JSON.stringify([template, ...existingTemplates])
+  )
+}
+```
+
+## Preview Mode
+
+Preview reports before generating:
+
+```typescript
+// From src/app/dashboard/reports/page.tsx:295
+if (preview) {
+  return doc.output('bloburl') // Opens in new tab
+}
+doc.save(`${name}.pdf`) // Downloads file
+```
+
+## Customizable Sections
+
+Select which sections to include:
+
+- **Executive Summary**: High-level overview with statistics
+- **Risk Assessment**: DREAD scoring and risk levels
+- **Vulnerability Details**: Complete vulnerability table
+- **Remediation Plans**: Mitigation steps and timelines
+- **Charts & Graphs**: Visual representations (planned)
+- **Compliance Mapping**: Framework alignment (planned)
+
+## Best Practices
+
+1. **Name Reports Descriptively**: Use dates and scope (e.g., "Q4 2024 Critical Vulnerabilities")
+2. **Filter Appropriately**: Tailor report scope to audience (executives don't need LOW severity items)
+3. **Use PDF for Formal Reports**: PDF maintains formatting across all platforms
+4. **Export CSV for Analysis**: Import into BI tools for custom visualizations
+5. **Preview Before Generating**: Verify filters and sections are correct
+6. **Save Templates**: Create reusable templates for recurring reports (monthly, quarterly)
+7. **Review Date Ranges**: Ensure date filters capture the intended reporting period

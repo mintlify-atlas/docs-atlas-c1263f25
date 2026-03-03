@@ -1,0 +1,401 @@
+---
+title: 'Scoring Framework Comparison'
+description: 'Compare CVSS, DREAD, and STRIDE frameworks to understand when to use each for vulnerability assessment'
+---
+
+## Overview
+
+VulnTrack supports three complementary frameworks for vulnerability assessment: **CVSS**, **DREAD**, and **STRIDE**. Each framework serves a different purpose and provides unique insights into security vulnerabilities.
+
+Understanding when and how to use each framework helps teams build a comprehensive security program.
+
+## Framework Comparison Matrix
+
+| Aspect | CVSS | DREAD | STRIDE |
+|--------|------|-------|--------|
+| **Purpose** | Technical severity scoring | Risk assessment | Threat categorization |
+| **Output** | Numeric score (0-10) | Numeric score (1-10) | Boolean categories |
+| **Focus** | Vulnerability characteristics | Business impact | Threat types |
+| **Origin** | Industry standard (FIRST) | Microsoft | Microsoft |
+| **Best For** | Compliance, reporting | Prioritization | Threat modeling |
+| **Audience** | Security teams, auditors | Business stakeholders | Development teams |
+| **Objectivity** | High (standardized) | Medium (contextual) | Low (qualitative) |
+| **Complexity** | High | Medium | Low |
+
+## Detailed Comparison
+
+<AccordionGroup>
+  <Accordion title="CVSS - Industry Standard Scoring">
+    ### Strengths
+    - **Industry Standard**: Widely recognized and required for compliance
+    - **Objective**: Consistent scoring based on technical characteristics
+    - **Comprehensive**: Covers exploitability, scope, and impact metrics
+    - **Comparable**: Enables comparison across different vulnerabilities and organizations
+    - **Integration**: Works with CVE database and security tools
+
+    ### Weaknesses
+    - **Complex**: Requires understanding of multiple metrics
+    - **Generic**: Doesn't account for organization-specific context
+    - **Technical**: Difficult for non-technical stakeholders to interpret
+    - **Static**: Score doesn't change based on your environment
+
+    ### Use When
+    - Reporting to external stakeholders or auditors
+    - Meeting compliance requirements (PCI-DSS, ISO 27001)
+    - Comparing vulnerabilities across different systems
+    - Integrating with security tools and scanners
+    - Tracking publicly disclosed vulnerabilities (CVEs)
+
+    ### Example Use Case
+    ```typescript
+    // Public-facing web vulnerability
+    const vulnerability = {
+      cveId: "CVE-2024-1234",
+      cvssVector: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+      cvssScore: 9.8,
+      severity: "CRITICAL",
+      
+      // Used for compliance reporting
+      reportToAuditor: true,
+      requiresPatchBySLA: "2024-03-10"
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="DREAD - Business Risk Assessment">
+    ### Strengths
+    - **Business-Oriented**: Dimensions align with business concerns
+    - **Contextual**: Accounts for your specific environment and user base
+    - **Intuitive**: Easy for non-technical stakeholders to understand
+    - **Flexible**: Can be adapted to organizational priorities
+    - **Comprehensive**: Considers multiple risk dimensions
+
+    ### Weaknesses
+    - **Subjective**: Scoring can vary between assessors
+    - **Non-Standard**: Not universally recognized like CVSS
+    - **Requires Calibration**: Teams need to align on scoring methodology
+    - **Time-Intensive**: Manual assessment for each dimension
+
+    ### Use When
+    - Prioritizing remediation efforts internally
+    - Communicating risk to business stakeholders
+    - Assessing internal or proprietary vulnerabilities
+    - Making resource allocation decisions
+    - Your environment differs significantly from standard assumptions
+
+    ### Example Use Case
+    ```typescript
+    // Internal API vulnerability with business context
+    const dreadScore = {
+      damage: 9,              // Customer PII exposed
+      reproducibility: 10,    // Easily reproducible
+      exploitability: 6,      // Requires valid API key
+      affectedUsers: 8,       // 75% of customer base
+      discoverability: 4,     // Internal API, not public
+      total: 7.4
+    }
+
+    // Business decision: High priority despite not being publicly discoverable
+    // because of high damage and affected users
+    ```
+  </Accordion>
+
+  <Accordion title="STRIDE - Threat Classification">
+    ### Strengths
+    - **Structured**: Systematic approach to threat identification
+    - **Comprehensive**: Covers all major threat categories
+    - **Educational**: Helps developers think like attackers
+    - **Design-Focused**: Best used during architecture and design phases
+    - **Multi-Threat**: Identifies when vulnerabilities span multiple categories
+
+    ### Weaknesses
+    - **No Scoring**: Doesn't provide quantitative risk assessment
+    - **Qualitative**: Can't easily compare severity between threats
+    - **Requires Expertise**: Effective use requires security knowledge
+    - **Time-Consuming**: Thorough analysis takes significant effort
+
+    ### Use When
+    - Conducting threat modeling sessions
+    - Designing new features or systems
+    - Training developers on security concepts
+    - Performing security architecture reviews
+    - Categorizing vulnerabilities for mitigation planning
+
+    ### Example Use Case
+    ```typescript
+    // SQL Injection vulnerability STRIDE analysis
+    const strideScore = {
+      spoofing: true,              // Can bypass authentication
+      tampering: true,             // Can modify database
+      reputation: false,           // Not directly related
+      informationDisclosure: true, // Can extract data
+      denialOfService: false,      // Not typical for SQLi
+      elevationOfPrivilege: true   // Can gain admin access
+    }
+
+    // Helps team understand all potential impacts and plan comprehensive mitigations
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Framework Selection Guide
+
+<CardGroup cols={2}>
+  <Card title="Use CVSS For" icon="certificate">
+    - Regulatory compliance
+    - CVE tracking
+    - External reporting
+    - Tool integration
+    - Vendor communication
+  </Card>
+
+  <Card title="Use DREAD For" icon="chart-line">
+    - Internal prioritization
+    - Business risk assessment
+    - Resource planning
+    - Executive reporting
+    - Context-specific scoring
+  </Card>
+
+  <Card title="Use STRIDE For" icon="diagram-project">
+    - Threat modeling
+    - Design reviews
+    - Security training
+    - Attack surface analysis
+    - Mitigation planning
+  </Card>
+
+  <Card title="Use All Three For" icon="shield-check">
+    - Comprehensive assessment
+    - Critical systems
+    - Security incidents
+    - Major features
+    - High-risk vulnerabilities
+  </Card>
+</CardGroup>
+
+## Multi-Framework Workflow
+
+VulnTrack enables teams to apply multiple frameworks to the same vulnerability:
+
+```typescript
+// Comprehensive vulnerability assessment
+const vulnerability = {
+  id: "vuln-001",
+  title: "SQL Injection in User API",
+  description: "Unvalidated input in /api/users endpoint",
+  
+  // CVSS - For compliance and standardization
+  cvssScore: 9.1,
+  cvssVector: "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:U/C:H/I:H/A:N",
+  severity: "CRITICAL",
+  
+  // DREAD - For business prioritization
+  dread: {
+    damage: 9,              // Full database compromise
+    reproducibility: 10,    // Easy to reproduce
+    exploitability: 7,      // Requires authentication
+    affectedUsers: 9,       // All user data at risk
+    discoverability: 6,     // API documentation available
+    total: 8.2
+  },
+  
+  // STRIDE - For comprehensive mitigation
+  stride: {
+    spoofing: true,
+    tampering: true,
+    reputation: false,
+    informationDisclosure: true,
+    denialOfService: false,
+    elevationOfPrivilege: true
+  }
+}
+```
+
+### Step-by-Step Workflow
+
+1. **Discovery**: Vulnerability is identified during code review or penetration testing
+
+2. **STRIDE Analysis**: Categorize the threat types to understand full impact
+   ```typescript
+   // What types of attacks are possible?
+   stride: { spoofing: true, tampering: true, ... }
+   ```
+
+3. **CVSS Scoring**: Calculate technical severity for compliance and reporting
+   ```typescript
+   // What is the technical severity?
+   cvssScore: 9.1
+   ```
+
+4. **DREAD Assessment**: Evaluate business risk in your specific context
+   ```typescript
+   // What is the business risk?
+   dread.total: 8.2
+   ```
+
+5. **Prioritization**: Combine all insights to make informed decisions
+   ```typescript
+   priority: "CRITICAL" // Based on high scores across all frameworks
+   ```
+
+6. **Mitigation**: Use STRIDE categories to ensure comprehensive fixes
+   ```typescript
+   mitigations: [
+     "Implement parameterized queries (Tampering)",
+     "Add input validation (Spoofing, Tampering)",
+     "Use prepared statements (Information Disclosure)",
+     "Implement least privilege (Elevation of Privilege)",
+     "Add audit logging (Repudiation)"
+   ]
+   ```
+
+## Real-World Example: Critical Vulnerability Assessment
+
+Let's assess a critical authentication bypass vulnerability:
+
+### Scenario
+A vulnerability allows attackers to bypass authentication by manipulating JWT tokens.
+
+### CVSS Assessment
+```typescript
+const cvss = {
+  vector: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N",
+  score: 9.1,
+  severity: "CRITICAL",
+  
+  rationale: "Network exploitable, low complexity, no privileges required"
+}
+```
+
+### DREAD Assessment
+```typescript
+const dread = {
+  damage: 10,             // Complete account takeover
+  reproducibility: 10,    // Works every time
+  exploitability: 8,      // Public PoC available
+  affectedUsers: 10,      // All 50,000 users vulnerable
+  discoverability: 9,     // Easy to find with basic testing
+  total: 9.4,
+  
+  rationale: "Maximum business impact - all user accounts at risk"
+}
+```
+
+### STRIDE Assessment
+```typescript
+const stride = {
+  spoofing: true,              // Can impersonate any user
+  tampering: true,             // Can modify user data
+  reputation: true,            // Users could deny actions
+  informationDisclosure: true, // Can access all user data
+  denialOfService: false,      // Not a DoS vector
+  elevationOfPrivilege: true,  // Can gain admin access
+  
+  rationale: "Affects 5 of 6 STRIDE categories - comprehensive threat"
+}
+```
+
+### Combined Decision
+```typescript
+const decision = {
+  priority: "P0 - CRITICAL",
+  timeline: "Immediate - patch within 24 hours",
+  actions: [
+    "Deploy emergency patch",
+    "Invalidate all existing JWT tokens",
+    "Force password reset for all users",
+    "Monitor for exploitation attempts",
+    "Notify affected users"
+  ],
+  
+  reasoning: `
+    - CVSS 9.1: Critical severity, compliance requires immediate action
+    - DREAD 9.4: Massive business impact with all users affected
+    - STRIDE: Affects 5/6 categories, requires comprehensive mitigations
+    
+    All three frameworks agree: this is a critical vulnerability
+    requiring immediate response.
+  `
+}
+```
+
+## Best Practices for Multi-Framework Assessment
+
+1. **Start with STRIDE**: Use during design to identify threats early
+
+2. **Add CVSS**: Calculate standard severity for known vulnerabilities
+
+3. **Apply DREAD**: Assess business impact in your specific context
+
+4. **Cross-Validate**: If frameworks disagree significantly, investigate why
+
+5. **Document Rationale**: Always explain scoring decisions for future reference
+
+6. **Regular Calibration**: Periodically review with team to ensure consistency
+
+7. **Automate Where Possible**: Use VulnTrack's CVSS-to-DREAD mapping to save time
+
+## Automatic CVSS-to-DREAD Mapping
+
+VulnTrack can automatically generate DREAD scores from CVSS vectors:
+
+```typescript
+import { mapCvssToDread } from '@/lib/scoring';
+
+const cvssVector = "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H";
+const dreadScore = mapCvssToDread(cvssVector);
+
+// Result:
+// {
+//   damage: 10,
+//   reproducibility: 9,
+//   exploitability: 9,
+//   affectedUsers: 8,
+//   discoverability: 9,
+//   total: 9.0
+// }
+```
+
+This helps teams quickly assess business impact when CVSS data is already available.
+
+## Decision Matrix: Which Framework to Use?
+
+| Situation | Recommended Framework(s) |
+|-----------|-------------------------|
+| New feature design | STRIDE |
+| External penetration test findings | CVSS + DREAD |
+| Internal security review | DREAD + STRIDE |
+| Compliance audit | CVSS |
+| Public CVE tracking | CVSS |
+| Executive risk report | DREAD |
+| Developer training | STRIDE |
+| Remediation prioritization | CVSS + DREAD |
+| Critical vulnerability | All three |
+| Weekly security review | DREAD |
+
+## Framework Resources
+
+<CardGroup cols={3}>
+  <Card title="CVSS Details" icon="book" href="/scoring/cvss">
+    Learn about CVSS v3.1 metrics and scoring
+  </Card>
+  
+  <Card title="DREAD Details" icon="book" href="/scoring/dread">
+    Understand DREAD risk assessment
+  </Card>
+  
+  <Card title="STRIDE Details" icon="book" href="/scoring/stride">
+    Explore STRIDE threat modeling
+  </Card>
+</CardGroup>
+
+## Conclusion
+
+No single framework provides a complete picture of vulnerability risk. VulnTrack's support for CVSS, DREAD, and STRIDE enables teams to:
+
+- **Comply** with industry standards (CVSS)
+- **Prioritize** based on business impact (DREAD)
+- **Understand** threat types comprehensively (STRIDE)
+
+By combining all three frameworks, security teams can make informed, defensible decisions about vulnerability remediation and resource allocation.

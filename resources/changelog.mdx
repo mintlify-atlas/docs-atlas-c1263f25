@@ -1,0 +1,213 @@
+---
+title: Changelog
+description: Release history and updates for VulnTrack
+---
+
+Track the evolution of VulnTrack with detailed release notes and version history.
+
+## Version 0.1.0
+
+<sub>Current Version - March 2026</sub>
+
+### Initial Release
+
+VulnTrack's first public release introduces a comprehensive vulnerability management platform designed for security teams who value precision and improved workflows.
+
+### Core Features
+
+**Unified Risk Scoring**
+- DREAD framework integration for quantitative internal triage
+- STRIDE threat modeling categorization
+- CVSS v3.1 support for industry-standard severity scoring
+- Multi-framework comparison and analysis
+
+**Vulnerability Management**
+- CVE Import Engine with NIST NVD integration
+- VulnCheck API support for enhanced vulnerability data
+- Manual vulnerability entry with rich metadata
+- Attachment support for screenshots, logs, and PoC files
+- Status tracking and lifecycle management
+
+**Team Collaboration**
+- Team-based workspaces for organized vulnerability management
+- Role-based access control (Admin, Analyst, Viewer)
+- Invitation-only registration system for security
+- Granular workspace permissions
+- User activity audit logging
+
+**Research & Knowledge**
+- VulnTrack Research: Built-in professional-grade blog system
+- OWASP Top 10 2024 analysis and guides
+- DREAD vs CVSS strategy documentation
+- Engineering-grade MDX content support
+- Syntax highlighting for code examples
+
+**Reporting & Analytics**
+- Executive-ready PDF report generation
+- CSV export for data analysis
+- Vulnerability dashboard with key metrics
+- Risk trend visualization
+- Severity distribution charts
+
+**User Experience**
+- Dark-mode first design aesthetic
+- Responsive layout for all screen sizes
+- Built with Radix UI and Tailwind CSS
+- Clean, professional typography
+- Intuitive navigation and workflows
+
+### Tech Stack
+
+- Next.js 14 with App Router
+- TypeScript for type safety
+- PostgreSQL database via Prisma ORM
+- NextAuth.js for authentication
+- shadcn/ui component library
+- React Markdown with GFM support
+
+### Security
+
+- bcrypt password hashing
+- Secure session management
+- SQL injection protection via Prisma
+- RBAC authorization
+- Invitation-based user onboarding
+
+### Known Limitations
+
+- Single database support (PostgreSQL only)
+- No automated vulnerability scanning
+- Email notifications not implemented
+- API documentation in progress
+- Test coverage ongoing
+
+<Info>
+This is the foundation release of VulnTrack. Future versions will build on this core functionality based on community feedback and contributions.
+</Info>
+
+## Roadmap
+
+Planned features for upcoming releases:
+
+### Version 0.2.0 (Planned)
+
+**Enhanced Integrations**
+- REST API with comprehensive documentation
+- Webhook support for event notifications
+- Jira integration for issue tracking
+- Slack/Teams notifications
+- CI/CD pipeline integration examples
+
+**Improved Workflow**
+- Email notifications for assignments and updates
+- Customizable vulnerability workflow states
+- SLA tracking and deadline management
+- Bulk operations for vulnerability management
+- Advanced search and filtering
+
+**Reporting Enhancements**
+- Custom report templates
+- Scheduled report generation
+- Additional export formats (JSON, XML)
+- API access to reporting engine
+- Dashboard customization
+
+### Version 0.3.0 (Planned)
+
+**Advanced Features**
+- Asset inventory management
+- Vulnerability correlation and pattern detection
+- Risk acceptance workflow with approvals
+- Custom fields and metadata
+- Advanced analytics and trends
+
+**Platform Improvements**
+- Multi-tenant architecture
+- SSO/SAML authentication support
+- LDAP/Active Directory integration
+- Two-factor authentication (2FA)
+- Enhanced audit logging
+
+**Developer Experience**
+- Comprehensive API documentation
+- SDK for common languages
+- Plugin system for extensions
+- Import/export for data migration
+- Database migration tools
+
+### Future Considerations
+
+- Mobile application (iOS/Android)
+- Machine learning for prioritization
+- Threat intelligence feed integration
+- Automated remediation suggestions
+- Compliance framework mapping (PCI-DSS, HIPAA, SOC 2)
+- Multi-language support
+
+<Tip>
+Roadmap priorities are driven by community feedback. Contribute to discussions on GitHub to help shape VulnTrack's future.
+</Tip>
+
+## Contributing to Development
+
+Want to help build the next version of VulnTrack?
+
+- **Report Bugs**: Help identify and fix issues
+- **Request Features**: Share your use case and needs
+- **Submit PRs**: Contribute code for new features
+- **Write Docs**: Improve documentation and guides
+- **Share Integrations**: Build and share tool integrations
+
+See the [Contributing Guide](/resources/contributing) for details on how to get involved.
+
+## Release Notes Format
+
+Future releases will follow this structure:
+
+```markdown
+## Version X.Y.Z
+
+<sub>Release Date</sub>
+
+### Added
+- New features and capabilities
+
+### Changed
+- Updates to existing features
+- Breaking changes (with migration guide)
+
+### Fixed
+- Bug fixes
+- Performance improvements
+
+### Deprecated
+- Features marked for removal
+
+### Removed
+- Discontinued features
+
+### Security
+- Security patches and updates
+```
+
+## Version History
+
+| Version | Release Date | Highlights |
+|---------|--------------|------------|
+| 0.1.0   | March 2026   | Initial public release with core features |
+
+## Stay Updated
+
+Follow VulnTrack development:
+
+- **GitHub Releases**: Subscribe to release notifications
+- **GitHub Discussions**: Join roadmap discussions
+- **VulnTrack Research**: Read about new features and best practices
+- **Changelog**: Bookmark this page for updates
+
+<Info>
+VulnTrack follows [Semantic Versioning](https://semver.org/): MAJOR.MINOR.PATCH
+- **MAJOR**: Breaking changes
+- **MINOR**: New features (backward compatible)
+- **PATCH**: Bug fixes (backward compatible)
+</Info>

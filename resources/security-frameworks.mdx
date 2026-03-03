@@ -1,0 +1,226 @@
+---
+title: Security Frameworks
+description: Understanding DREAD, STRIDE, CVSS, and OWASP Top 10 in VulnTrack
+---
+
+VulnTrack integrates multiple security frameworks to provide comprehensive vulnerability assessment and risk scoring. This guide explains each framework and how they work together.
+
+## DREAD Framework
+
+DREAD is a quantitative risk assessment model designed for internal triage and prioritization. It provides a structured approach to evaluating vulnerabilities based on five key factors.
+
+### DREAD Components
+
+<AccordionGroup>
+  <Accordion title="Damage Potential">
+    Measures the extent of harm if the vulnerability is exploited.
+    
+    - **10**: Complete system compromise, data destruction
+    - **5**: Information disclosure, service degradation
+    - **0**: Minimal impact
+  </Accordion>
+
+  <Accordion title="Reproducibility">
+    Assesses how easily the attack can be replicated.
+    
+    - **10**: Attack works every time, no special conditions
+    - **5**: Attack works sometimes, requires timing or specific conditions
+    - **0**: Nearly impossible to reproduce
+  </Accordion>
+
+  <Accordion title="Exploitability">
+    Evaluates the technical skill and resources required to exploit.
+    
+    - **10**: No authentication needed, can be scripted
+    - **5**: Requires authenticated access or specialized knowledge
+    - **0**: Requires deep system knowledge and extensive resources
+  </Accordion>
+
+  <Accordion title="Affected Users">
+    Determines the scope of users potentially impacted.
+    
+    - **10**: All users affected (default configuration)
+    - **5**: Some users affected (specific configuration)
+    - **0**: Very few users affected (administrative only)
+  </Accordion>
+
+  <Accordion title="Discoverability">
+    Measures how easily the vulnerability can be found.
+    
+    - **10**: Visible in browser address bar or public
+    - **5**: Requires network scanning or code review
+    - **0**: Requires source code access and deep analysis
+  </Accordion>
+</AccordionGroup>
+
+<Tip>
+DREAD scores range from 0-50 (sum of all five components). VulnTrack calculates this automatically based on your inputs and normalizes it for comparison with other frameworks.
+</Tip>
+
+### When to Use DREAD
+
+- Internal risk assessment and triage
+- Pre-patch prioritization decisions
+- Custom application vulnerabilities
+- Threat modeling workshops
+
+## STRIDE Framework
+
+STRIDE is a threat modeling framework developed by Microsoft that categorizes threats into six types. Unlike DREAD, STRIDE focuses on identifying threat categories rather than scoring severity.
+
+### STRIDE Threat Categories
+
+<CardGroup cols={2}>
+  <Card title="Spoofing" icon="user-secret">
+    Impersonating something or someone else
+    
+    **Examples**: Credential theft, session hijacking, man-in-the-middle attacks
+  </Card>
+
+  <Card title="Tampering" icon="wrench">
+    Modifying data or code
+    
+    **Examples**: SQL injection, parameter manipulation, file tampering
+  </Card>
+
+  <Card title="Repudiation" icon="ban">
+    Claiming to not have performed an action
+    
+    **Examples**: Missing audit logs, lack of transaction signing
+  </Card>
+
+  <Card title="Information Disclosure" icon="eye">
+    Exposing information to unauthorized parties
+    
+    **Examples**: Data leaks, directory traversal, insecure storage
+  </Card>
+
+  <Card title="Denial of Service" icon="circle-xmark">
+    Degrading or denying service to users
+    
+    **Examples**: Resource exhaustion, crash exploits, bandwidth flooding
+  </Card>
+
+  <Card title="Elevation of Privilege" icon="arrow-up">
+    Gaining unauthorized capabilities
+    
+    **Examples**: Privilege escalation, authorization bypass, remote code execution
+  </Card>
+</CardGroup>
+
+<Info>
+In VulnTrack, you can tag vulnerabilities with applicable STRIDE categories to enhance threat modeling and pattern recognition across your vulnerability database.
+</Info>
+
+### When to Use STRIDE
+
+- Design phase threat modeling
+- Security architecture review
+- Attack surface analysis
+- Security requirements gathering
+
+## CVSS v3.1
+
+The Common Vulnerability Scoring System (CVSS) is the industry-standard framework for communicating vulnerability severity. VulnTrack supports CVSS v3.1 scoring for compliance and external reporting.
+
+### CVSS Metric Groups
+
+**Base Metrics** (Intrinsic characteristics)
+- Attack Vector (Network, Adjacent, Local, Physical)
+- Attack Complexity (Low, High)
+- Privileges Required (None, Low, High)
+- User Interaction (None, Required)
+- Scope (Unchanged, Changed)
+- Confidentiality Impact (None, Low, High)
+- Integrity Impact (None, Low, High)
+- Availability Impact (None, Low, High)
+
+**Temporal Metrics** (Time-dependent characteristics)
+- Exploit Code Maturity
+- Remediation Level
+- Report Confidence
+
+**Environmental Metrics** (Organization-specific characteristics)
+- Modified Base Metrics
+- Confidentiality/Integrity/Availability Requirements
+
+### CVSS Severity Ratings
+
+| Score Range | Severity |
+|-------------|----------|
+| 0.0         | None     |
+| 0.1 - 3.9   | Low      |
+| 4.0 - 6.9   | Medium   |
+| 7.0 - 8.9   | High     |
+| 9.0 - 10.0  | Critical |
+
+<Tip>
+VulnTrack's CVE Import Engine automatically fetches CVSS scores from NIST NVD. You can override these scores with organization-specific Environmental metrics.
+</Tip>
+
+### When to Use CVSS
+
+- Compliance reporting (PCI-DSS, HIPAA, etc.)
+- Vulnerability disclosure
+- Industry benchmarking
+- External communication with vendors
+
+## OWASP Top 10
+
+The OWASP Top 10 is a standard awareness document representing the most critical security risks to web applications. VulnTrack includes built-in research content analyzing the OWASP Top 10 2024.
+
+### OWASP Top 10 2024
+
+1. **Broken Access Control**
+2. **Cryptographic Failures**
+3. **Injection**
+4. **Insecure Design**
+5. **Security Misconfiguration**
+6. **Vulnerable and Outdated Components**
+7. **Identification and Authentication Failures**
+8. **Software and Data Integrity Failures**
+9. **Security Logging and Monitoring Failures**
+10. **Server-Side Request Forgery (SSRF)**
+
+<Info>
+Explore VulnTrack's built-in Research blog for in-depth analysis of each OWASP Top 10 category, including real-world examples and remediation strategies.
+</Info>
+
+### Mapping Vulnerabilities to OWASP Top 10
+
+VulnTrack allows you to tag vulnerabilities with OWASP Top 10 categories to:
+
+- Track organizational exposure to common web application risks
+- Generate compliance reports for security audits
+- Identify patterns and training needs
+- Benchmark against industry standards
+
+## Framework Comparison
+
+| Framework | Purpose | Scoring | Best For |
+|-----------|---------|---------|----------|
+| **DREAD** | Risk quantification | 0-50 (normalized) | Internal triage, custom apps |
+| **STRIDE** | Threat categorization | Categorical | Threat modeling, design phase |
+| **CVSS** | Standardized severity | 0-10 | Compliance, external reporting |
+| **OWASP Top 10** | Awareness & benchmarking | Categorical | Web app security, training |
+
+## Using Multiple Frameworks Together
+
+VulnTrack's unified approach allows you to leverage all frameworks simultaneously:
+
+1. **Import CVE** with automatic CVSS scoring
+2. **Apply DREAD** scoring for internal context
+3. **Tag STRIDE** categories for threat modeling
+4. **Map to OWASP Top 10** for compliance
+5. **Prioritize remediation** using combined insights
+
+<Tip>
+The VulnTrack Research blog contains detailed guides on framework selection, including "DREAD vs CVSS Strategy Guides" to help you choose the right approach for your organization.
+</Tip>
+
+## Additional Resources
+
+- [VulnTrack Research Blog](#) - Deep technical guides and analysis
+- [NIST NVD](https://nvd.nist.gov/) - Official CVSS scoring database
+- [OWASP Foundation](https://owasp.org/) - Web application security resources
+- [Microsoft STRIDE](https://learn.microsoft.com/en-us/azure/security/develop/threat-modeling-tool-threats) - Threat modeling documentation

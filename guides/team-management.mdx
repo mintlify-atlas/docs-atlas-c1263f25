@@ -1,0 +1,511 @@
+---
+title: Team Management and Invitations
+description: Guide for creating teams, inviting members, and managing team structure in VulnTrack
+---
+
+VulnTrack implements a multi-tenant team system that ensures strict data isolation between organizations. This guide covers team creation, member invitations, and team administration.
+
+## Understanding Teams
+
+VulnTrack's team architecture provides:
+
+- **Data Isolation**: Each team's vulnerabilities, users, and reports are completely separate
+- **Team-Scoped Access**: Users can only see data from their own team
+- **Admin Boundaries**: Even administrators are restricted to managing their own team
+- **Automatic Team Assignment**: All new vulnerabilities and invitations inherit the creator's team ID
+
+### Team Data Model
+
+```prisma
+model Team {
+  id        String   @id @default(uuid())
+  name      String
+  users     User[]
+  vulnerabilities Vulnerability[]
+  invitations Invitation[]
+  auditLogs AuditLog[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model User {
+  // ... other fields
+  teamId        String?
+  team          Team?     @relation(fields: [teamId], references: [id])
+}
+```
+
+## Creating Your First Team
+
+Teams are automatically created when the first admin user registers:
+
+<Steps>
+  <Step title="Register as First User">
+    Complete the registration process. The first user is automatically assigned the ADMIN role.
+  </Step>
+  
+  <Step title="Automatic Team Creation">
+    If you don't have a team, VulnTrack creates one called "My Organization":
+    
+    ```typescript
+    // From vulnerabilities.ts:136-145
+    if (!user.teamId && user.role === 'ADMIN') {
+      const newTeam = await prisma.team.create({
+        data: { name: "My Organization" }
+      })
+      await prisma.user.update({
+        where: { id: session.user.id },
+        data: { teamId: newTeam.id }
+      })
+    }
+    ```
+  </Step>
+  
+  <Step title="Customize Team Name">
+    Update your team name in **Admin Settings** to reflect your organization.
+  </Step>
+</Steps>
+
+<Note>
+  **Self-Healing**: VulnTrack automatically creates a team for admin users who don't have one. This ensures smooth onboarding and prevents data access issues.
+</Note>
+
+## Inviting Team Members
+
+Only administrators can invite new users to their team.
+
+<Steps>
+  <Step title="Navigate to User Management">
+    Go to **Admin** > **Users** from the dashboard.
+  </Step>
+  
+  <Step title="Click Invite User">
+    Click the **Invite User** button in the top right.
+  </Step>
+  
+  <Step title="Enter Email and Role">
+    In the invitation dialog:
+    - **Email**: Enter the new member's email address
+    - **Role**: Select ADMIN, ANALYST, or VIEWER
+  </Step>
+  
+  <Step title="Send Invitation">
+    Click **Send Invitation**. The system:
+    - Validates the email isn't already registered
+    - Generates a secure, unique token
+    - Creates an invitation record in the database
+    - Sends an email with the registration link
+  </Step>
+  
+  <Step title="User Accepts Invitation">
+    The recipient clicks the link, completes registration, and is automatically added to your team.
+  </Step>
+</Steps>
+
+### Invitation Workflow
+
+```typescript
+// From admin.ts:236-313
+export async function createInvitation(email: string, role: string) {
+  const session = await checkAdmin()
+  
+  // Check for existing user
+  const existingUser = await prisma.user.findUnique({ where: { email } })
+  if (existingUser) {
+    return { success: false, error: "A user with this email already exists." }
+  }
+  
+  // Generate secure token
+  const token = crypto.randomUUID()
+  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24 hours
+  
+  // Get inviter's teamId
+  const inviter = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { teamId: true }
+  })
+  
+  const invitation = await prisma.invitation.create({
+    data: {
+      email,
+      token,
+      role,
+      teamId: inviter?.teamId,
+      expiresAt,
+      inviterId: session.user.id
+    }
+  })
+  
+  // Send email
+  const invitePath = `/register?token=${token}`
+  const absoluteInviteLink = `${process.env.NEXT_PUBLIC_APP_URL}${invitePath}`
+  
+  await sendEmail({
+    to: email,
+    subject: "You've been invited to VulnTrack",
+    html: getInvitationEmail(absoluteInviteLink)
+  })
+  
+  return { success: true, data: { token, link: invitePath } }
+}
+```
+
+### Invitation Expiration
+
+Invitations are valid for **24 hours**:
+
+- After 24 hours, the token becomes invalid
+- The inviter can resend or create a new invitation
+- Old invitations are automatically replaced when resending to the same email
+
+## Managing Team Members
+
+### Viewing Team Members
+
+The **Admin > Users** page displays:
+
+- **User Profile**: Name, email, avatar
+- **Role**: ADMIN, ANALYST, or VIEWER badge
+- **Status**: ACTIVE, INACTIVE, or PENDING
+- **Contributions**: Number of vulnerabilities created
+- **Last Active**: Recent activity timestamp
+- **Pending Invitations**: Separate section for outstanding invites
+
+### Loading Team Members
+
+```typescript
+// From admin.ts:18-78
+export async function getUsers() {
+  const session = await checkAdmin()
+  
+  const admin = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { teamId: true }
+  })
+  
+  const [users, invitations] = await Promise.all([
+    prisma.user.findMany({
+      where: { teamId: admin?.teamId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        status: true,
+        image: true,
+        createdAt: true,
+        _count: { select: { vulnerabilities: true } }
+      }
+    }),
+    prisma.invitation.findMany({
+      where: { teamId: admin?.teamId },
+      orderBy: { createdAt: 'desc' }
+    })
+  ])
+  
+  return { success: true, data: [...invitations, ...users] }
+}
+```
+
+### Updating User Roles
+
+Admins can change team member roles:
+
+<Steps>
+  <Step title="Navigate to User Row">
+    Find the user in the **Admin > Users** table.
+  </Step>
+  
+  <Step title="Click Edit or Role Dropdown">
+    Click the **Edit** icon or use the inline role dropdown.
+  </Step>
+  
+  <Step title="Select New Role">
+    Choose from:
+    - **ADMIN**: Full access to all features
+    - **ANALYST**: Can create and edit vulnerabilities
+    - **VIEWER**: Read-only access to approved vulnerabilities
+  </Step>
+  
+  <Step title="Save Changes">
+    The role is updated immediately and logged in the audit trail.
+  </Step>
+</Steps>
+
+```typescript
+// From admin.ts:155-176
+export async function updateUserRole(userId: string, role: string) {
+  const session = await checkAdmin()
+  
+  // Authorization: Verify same team
+  const admin = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { teamId: true }
+  })
+  const targetUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { teamId: true }
+  })
+  
+  if (!admin?.teamId || !targetUser || admin.teamId !== targetUser.teamId) {
+    return { success: false, error: "Unauthorized access to user" }
+  }
+  
+  await prisma.user.update({ where: { id: userId }, data: { role } })
+  await logAudit("UPDATE_ROLE", "User", userId, `Role updated to ${role}`)
+}
+```
+
+### Deactivating Users
+
+To temporarily disable a user without deleting:
+
+1. Change their **Status** to INACTIVE
+2. The user cannot log in but their data is preserved
+3. Reactivate by changing status back to ACTIVE
+
+### Deleting Users
+
+<Warning>
+  **Irreversible Action**: Deleting a user removes them from the team permanently. Their created vulnerabilities remain but are orphaned.
+</Warning>
+
+<Steps>
+  <Step title="Open User Options">
+    Click the **Delete** icon next to the user in the table.
+  </Step>
+  
+  <Step title="Confirm Deletion">
+    Confirm the action in the dialog.
+  </Step>
+  
+  <Step title="User Removed">
+    The user is deleted immediately and can no longer access the team.
+  </Step>
+</Steps>
+
+```typescript
+// From admin.ts:178-204
+export async function deleteUser(userId: string) {
+  const session = await checkAdmin()
+  
+  const admin = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { teamId: true }
+  })
+  const targetUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { teamId: true }
+  })
+  
+  if (!admin?.teamId || !targetUser || admin.teamId !== targetUser.teamId) {
+    return { success: false, error: "Unauthorized access to user" }
+  }
+  
+  await prisma.user.delete({ where: { id: userId } })
+  await logAudit("DELETE_USER", "User", userId, "User deleted")
+}
+```
+
+## Managing Invitations
+
+### Viewing Pending Invitations
+
+Pending invitations appear in the user table with:
+- **Email**: Invited email address
+- **Role**: Assigned role (upon acceptance)
+- **Status**: PENDING badge
+- **Created**: Invitation date
+
+### Resending Invitations
+
+To resend an expired or lost invitation:
+
+1. Delete the old invitation
+2. Create a new invitation with the same email
+3. The system automatically replaces old invitations:
+
+```typescript
+// From admin.ts:239-249
+const existingInvite = await prisma.invitation.findFirst({ where: { email } })
+
+if (existingInvite) {
+  // Delete old invite to create a new one
+  await prisma.invitation.delete({ where: { id: existingInvite.id } })
+}
+```
+
+### Revoking Invitations
+
+To cancel a pending invitation:
+
+<Steps>
+  <Step title="Locate Invitation">
+    Find the pending invitation in the **Admin > Users** table.
+  </Step>
+  
+  <Step title="Click Delete">
+    Click the **Delete** icon next to the invitation.
+  </Step>
+  
+  <Step title="Confirm Revocation">
+    The invitation is removed and the token becomes invalid.
+  </Step>
+</Steps>
+
+```typescript
+// From admin.ts:206-234
+export async function deleteInvitation(invitationId: string) {
+  const session = await checkAdmin()
+  
+  const admin = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { teamId: true }
+  })
+  
+  const invitation = await prisma.invitation.findUnique({ where: { id: invitationId } })
+  
+  if (!admin?.teamId || !invitation || admin.teamId !== invitation.teamId) {
+    return { success: false, error: "Unauthorized access to invitation" }
+  }
+  
+  await prisma.invitation.delete({ where: { id: invitationId } })
+  await logAudit("DELETE_INVITATION", "Invitation", invitationId, `Invitation revoked for ${invitation.email}`)
+}
+```
+
+## Workspace Consolidation
+
+For legacy installations or data recovery, admins can consolidate orphaned data:
+
+<Warning>
+  **Advanced Feature**: Only use this if you have orphaned users or vulnerabilities without a team assignment. This operation moves **all** orphaned data to your team.
+</Warning>
+
+```typescript
+// From admin.ts:317-360
+export async function consolidateWorkspace() {
+  const session = await checkAdmin()
+  
+  const admin = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { teamId: true }
+  })
+  
+  if (!admin?.teamId) {
+    return { success: false, error: "Admin has no team." }
+  }
+  
+  // Move orphaned users
+  await prisma.user.updateMany({
+    where: { teamId: null },
+    data: { teamId: admin.teamId }
+  })
+  
+  // Move orphaned vulnerabilities
+  await prisma.vulnerability.updateMany({
+    where: { teamId: null },
+    data: { teamId: admin.teamId }
+  })
+}
+```
+
+Access this feature via the **Fix Workspace Isolation** button on the Admin > Users page.
+
+## Email Configuration
+
+Invitations require email configuration. Set these environment variables:
+
+```bash
+# .env
+RESEND_API_KEY=re_xxxxxxxxxxxxx
+EMAIL_FROM=noreply@yourdomain.com
+NEXT_PUBLIC_APP_URL=https://vulntrack.yourdomain.com
+```
+
+See the [Email Configuration guide](/configuration/email) for detailed setup.
+
+## Team Statistics
+
+The Admin > Users page displays team metrics:
+
+- **Total Users**: Registered team members
+- **Active Sessions**: Currently logged-in users
+- **System Uptime**: Application availability
+- **Storage Used**: Database and file storage
+
+<Note>
+  **Note**: Some metrics (like Active Sessions and Storage) are placeholder values in the current implementation and will be calculated from actual data in future versions.
+</Note>
+
+## Best Practices
+
+<Tip>
+  **Role Assignment**: Choose appropriate roles:
+  - **ADMIN**: Only trusted users who need to manage the team
+  - **ANALYST**: Security team members who create and investigate vulnerabilities
+  - **VIEWER**: Stakeholders, executives, auditors who need read-only access
+</Tip>
+
+<Tip>
+  **Regular Audits**: Periodically review your team members:
+  - Remove users who have left the organization
+  - Update roles based on job changes
+  - Revoke unused pending invitations
+</Tip>
+
+<Tip>
+  **Email Validation**: Always verify email addresses before sending invitations to avoid:
+  - Typos leading to failed invitations
+  - Sensitive data sent to wrong recipients
+  - Wasted invitation tokens
+</Tip>
+
+## Troubleshooting
+
+### Invitation Email Not Received
+
+**Problem**: Invited user doesn't receive the email.
+
+**Solutions**:
+- Verify RESEND_API_KEY is set correctly
+- Check spam/junk folders
+- Confirm EMAIL_FROM is a verified domain
+- Review server logs for email errors
+- Test with a different email address
+
+### Cannot Invite User
+
+**Problem**: "User already exists" error when inviting.
+
+**Solutions**:
+- Check if the email is already registered
+- Search existing users in the Admin > Users table
+- If user is in a different team, they must register with a different email
+
+### User Cannot See Team Data
+
+**Problem**: User logs in but sees no vulnerabilities.
+
+**Solutions**:
+- Verify user's teamId matches the admin's team
+- Run **Fix Workspace Isolation** if needed
+- Check that vulnerabilities have been created and approved
+- Ensure user role has appropriate permissions
+
+### Invitation Token Expired
+
+**Problem**: User clicks link but gets "Invalid or expired token" error.
+
+**Solutions**:
+- Resend the invitation (creates new token)
+- Ensure user completes registration within 24 hours
+- Check system time is synchronized (NTP)
+
+## Next Steps
+
+- Configure [User Roles and Permissions](/guides/user-roles)
+- Set up [Email Notifications](/configuration/email)
+- Learn about [Assigning Vulnerabilities](/guides/assigning-tasks)
+- Review [Security Best Practices](/resources/best-practices)

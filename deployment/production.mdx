@@ -1,0 +1,645 @@
+---
+title: 'Production Deployment'
+description: 'Best practices for deploying VulnTrack in production environments'
+---
+
+## Overview
+
+This guide covers production deployment strategies for VulnTrack, including database configuration, scaling, monitoring, and performance optimization.
+
+## Pre-Deployment Checklist
+
+<Steps>
+  <Step title="Environment Configuration">
+    - [ ] Set `NODE_ENV=production`
+    - [ ] Configure secure `NEXTAUTH_SECRET` (32+ characters)
+    - [ ] Use production database with SSL
+    - [ ] Enable HTTPS/TLS
+    - [ ] Configure proper CORS settings
+    - [ ] Set up error monitoring
+  </Step>
+
+  <Step title="Database Setup">
+    - [ ] Use managed PostgreSQL service or dedicated server
+    - [ ] Enable connection pooling
+    - [ ] Configure automated backups
+    - [ ] Set up replica for read scaling (optional)
+    - [ ] Enable SSL/TLS for connections
+  </Step>
+
+  <Step title="Security Hardening">
+    - [ ] Review [Security Guide](/deployment/security)
+    - [ ] Configure firewall rules
+    - [ ] Set up rate limiting
+    - [ ] Enable audit logging
+    - [ ] Configure RBAC policies
+  </Step>
+
+  <Step title="Monitoring & Logging">
+    - [ ] Set up application monitoring
+    - [ ] Configure log aggregation
+    - [ ] Set up alerts for critical errors
+    - [ ] Monitor database performance
+    - [ ] Track API response times
+  </Step>
+</Steps>
+
+## Database Configuration
+
+### Managed PostgreSQL (Recommended)
+
+Use a managed database service for production:
+
+<CodeGroup>
+```bash AWS RDS
+DATABASE_URL="postgresql://username:password@your-db.rds.amazonaws.com:5432/vulntrack?sslmode=require&connection_limit=20"
+```
+
+```bash Google Cloud SQL
+DATABASE_URL="postgresql://username:password@/vulntrack?host=/cloudsql/project:region:instance&sslmode=require"
+```
+
+```bash Azure Database
+DATABASE_URL="postgresql://username:password@your-db.postgres.database.azure.com:5432/vulntrack?sslmode=require"
+```
+
+```bash Supabase
+DATABASE_URL="postgresql://postgres:password@db.project.supabase.co:5432/postgres?sslmode=require&pgbouncer=true"
+```
+</CodeGroup>
+
+### Connection Pooling
+
+For optimal performance, use connection pooling:
+
+```typescript prisma/schema.prisma
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL") // For migrations
+}
+```
+
+```bash .env
+# Pooled connection (for queries)
+DATABASE_URL="postgresql://user:pass@host:5432/db?pgbouncer=true&connection_limit=10"
+
+# Direct connection (for migrations)
+DIRECT_URL="postgresql://user:pass@host:5432/db"
+```
+
+<Tip>
+  Set `connection_limit` to match your application's concurrency needs. Start with 10-20 and adjust based on monitoring.
+</Tip>
+
+### Database Migrations
+
+For production, use Prisma migrations instead of `db push`:
+
+<Steps>
+  <Step title="Generate migration">
+    ```bash
+    npx prisma migrate dev --name init
+    ```
+  </Step>
+
+  <Step title="Review migration SQL">
+    Check the generated SQL in `prisma/migrations/` directory.
+  </Step>
+
+  <Step title="Deploy to production">
+    ```bash
+    npx prisma migrate deploy
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+  Never use `prisma db push` in production as it may result in data loss. Always use migrations for schema changes.
+</Warning>
+
+### Backup Strategy
+
+<AccordionGroup>
+  <Accordion title="Automated Backups">
+    Configure automated backups with your database provider:
+    - **Frequency**: Daily full backups + continuous WAL archiving
+    - **Retention**: 30 days for daily, 7 days for point-in-time
+    - **Testing**: Regularly test restore procedures
+
+    ```bash
+    # Manual backup example
+    pg_dump -h your-db.example.com -U vulntrack \
+      -F c -b -v \
+      -f backup_$(date +%Y%m%d).dump \
+      vulntrack
+    ```
+  </Accordion>
+
+  <Accordion title="Point-in-Time Recovery">
+    Enable PITR for critical deployments:
+    - Configure WAL archiving
+    - Store archives in S3/GCS
+    - Test recovery procedures monthly
+  </Accordion>
+
+  <Accordion title="Backup Verification">
+    ```bash
+    # Restore to test database
+    pg_restore -h test-db.example.com -U vulntrack \
+      -d vulntrack_test \
+      --clean --if-exists \
+      backup_20260303.dump
+    
+    # Verify data integrity
+    psql -h test-db.example.com -U vulntrack -d vulntrack_test \
+      -c "SELECT COUNT(*) FROM \"User\"; SELECT COUNT(*) FROM \"Vulnerability\";"
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Application Deployment
+
+### Build Configuration
+
+Update `package.json` build script for production:
+
+```json package.json
+{
+  "scripts": {
+    "build": "npx prisma generate && next build",
+    "start": "next start",
+    "migrate:deploy": "npx prisma migrate deploy"
+  }
+}
+```
+
+<Warning>
+  Remove `prisma db push --accept-data-loss` from production builds. Use migrations instead.
+</Warning>
+
+### Next.js Configuration
+
+The application includes production-ready security headers:
+
+```javascript next.config.mjs
+const nextConfig = {
+  async headers() {
+    return [
+      {
+        source: '/:path*',
+        headers: [
+          {
+            key: 'Strict-Transport-Security',
+            value: 'max-age=63072000; includeSubDomains; preload'
+          },
+          {
+            key: 'X-Frame-Options',
+            value: 'SAMEORIGIN'
+          },
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff'
+          },
+          {
+            key: 'Referrer-Policy',
+            value: 'origin-when-cross-origin'
+          },
+          {
+            key: 'Content-Security-Policy',
+            value: "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline';"
+          }
+        ]
+      }
+    ]
+  }
+};
+```
+
+### Deployment Platforms
+
+<CardGroup cols={2}>
+  <Card title="Vercel" icon="triangle">
+    ```bash
+    # Install Vercel CLI
+    npm i -g vercel
+    
+    # Deploy
+    vercel --prod
+    ```
+    
+    Configure in `vercel.json`:
+    ```json
+    {
+      "buildCommand": "prisma generate && next build",
+      "env": {
+        "DATABASE_URL": "@database-url"
+      }
+    }
+    ```
+  </Card>
+
+  <Card title="Docker" icon="docker">
+    See [Docker Deployment](/deployment/docker) guide.
+    
+    For production:
+    - Use docker-compose with restart policies
+    - Configure health checks
+    - Set resource limits
+    - Use secrets management
+  </Card>
+
+  <Card title="Kubernetes" icon="dharmachakra">
+    ```yaml deployment.yaml
+    apiVersion: apps/v1
+    kind: Deployment
+    metadata:
+      name: vulntrack
+    spec:
+      replicas: 3
+      template:
+        spec:
+          containers:
+          - name: vulntrack
+            image: vulntrack:latest
+            resources:
+              requests:
+                memory: "512Mi"
+                cpu: "500m"
+              limits:
+                memory: "1Gi"
+                cpu: "1000m"
+    ```
+  </Card>
+
+  <Card title="AWS ECS" icon="aws">
+    Deploy using ECS Fargate:
+    - Use task definitions with secrets from AWS Secrets Manager
+    - Configure ALB for load balancing
+    - Enable CloudWatch logs
+    - Set up auto-scaling policies
+  </Card>
+</CardGroup>
+
+## Scaling Strategies
+
+### Horizontal Scaling
+
+VulnTrack is stateless and can be horizontally scaled:
+
+<Steps>
+  <Step title="Load Balancer">
+    Deploy multiple instances behind a load balancer:
+    - Use health check endpoint: `/api/health`
+    - Enable sticky sessions for WebSocket support (if added)
+    - Configure SSL/TLS termination at load balancer
+  </Step>
+
+  <Step title="Database Read Replicas">
+    For read-heavy workloads:
+    ```typescript
+    // Use read replica for queries
+    const readReplica = new PrismaClient({
+      datasources: {
+        db: {
+          url: process.env.DATABASE_READ_URL
+        }
+      }
+    });
+    ```
+  </Step>
+
+  <Step title="Caching">
+    Implement caching for frequently accessed data:
+    - Use Redis for session storage
+    - Cache vulnerability statistics
+    - Implement HTTP caching headers
+  </Step>
+</Steps>
+
+### Performance Optimization
+
+<AccordionGroup>
+  <Accordion title="Database Query Optimization">
+    ```typescript
+    // Use select to limit fields
+    const users = await prisma.user.findMany({
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true
+      },
+      where: { teamId }
+    });
+    
+    // Use indexes for frequent queries
+    // Add to schema.prisma:
+    // @@index([teamId, status])
+    ```
+  </Accordion>
+
+  <Accordion title="Next.js Optimizations">
+    - Enable output: 'standalone' in next.config.js
+    - Use Image optimization for logos/avatars
+    - Implement route-level code splitting
+    - Enable compression (gzip/brotli)
+  </Accordion>
+
+  <Accordion title="Monitoring Slow Queries">
+    Enable Prisma query logging:
+    ```typescript
+    const prisma = new PrismaClient({
+      log: [
+        { level: 'query', emit: 'event' },
+        { level: 'warn', emit: 'stdout' },
+        { level: 'error', emit: 'stdout' }
+      ]
+    });
+    
+    prisma.$on('query', (e) => {
+      if (e.duration > 1000) {
+        console.warn('Slow query:', e.query, e.duration);
+      }
+    });
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Monitoring & Observability
+
+### Application Monitoring
+
+<CodeGroup>
+```typescript Sentry Integration
+// src/lib/sentry.ts
+import * as Sentry from "@sentry/nextjs";
+
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  environment: process.env.NODE_ENV,
+  tracesSampleRate: 0.1,
+  beforeSend(event) {
+    // Filter sensitive data
+    if (event.request) {
+      delete event.request.cookies;
+    }
+    return event;
+  }
+});
+```
+
+```typescript Datadog APM
+// src/lib/datadog.ts
+import tracer from 'dd-trace';
+
+tracer.init({
+  service: 'vulntrack',
+  env: process.env.NODE_ENV,
+  logInjection: true
+});
+
+export default tracer;
+```
+
+```typescript Custom Logging
+// src/lib/logger.ts
+import winston from 'winston';
+
+export const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  format: winston.format.json(),
+  transports: [
+    new winston.transports.Console(),
+    new winston.transports.File({ 
+      filename: 'error.log', 
+      level: 'error' 
+    })
+  ]
+});
+```
+</CodeGroup>
+
+### Health Checks
+
+Implement comprehensive health checks:
+
+```typescript app/api/health/route.ts
+import { prisma } from '@/lib/prisma';
+
+export async function GET() {
+  try {
+    // Check database connection
+    await prisma.$queryRaw`SELECT 1`;
+    
+    return Response.json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      database: 'connected'
+    });
+  } catch (error) {
+    return Response.json(
+      {
+        status: 'unhealthy',
+        timestamp: new Date().toISOString(),
+        database: 'disconnected',
+        error: error.message
+      },
+      { status: 503 }
+    );
+  }
+}
+```
+
+### Metrics to Monitor
+
+| Metric | Description | Alert Threshold |
+|--------|-------------|----------------|
+| Response Time | API endpoint latency | > 1000ms |
+| Error Rate | 5xx responses | > 1% |
+| Database Connections | Active connections | > 80% of limit |
+| CPU Usage | Container CPU | > 80% |
+| Memory Usage | Container memory | > 85% |
+| Disk Space | Database storage | > 80% |
+
+## Environment Variables
+
+### Production Environment
+
+```bash .env.production
+# Application
+NODE_ENV=production
+NEXTAUTH_URL=https://vulntrack.example.com
+NEXTAUTH_SECRET=<generate-with-openssl-rand-base64-32>
+
+# Database
+DATABASE_URL=postgresql://user:pass@db.example.com:5432/vulntrack?sslmode=require&connection_limit=20
+DIRECT_URL=postgresql://user:pass@db.example.com:5432/vulntrack?sslmode=require
+
+# Monitoring (Optional)
+SENTRY_DSN=https://xxx@sentry.io/xxx
+DATADOG_API_KEY=xxx
+
+# Logging
+LOG_LEVEL=info
+```
+
+<Warning>
+  Store secrets in a secure secrets manager (AWS Secrets Manager, HashiCorp Vault, etc.) rather than plain environment variables.
+</Warning>
+
+## Deployment Workflow
+
+<Steps>
+  <Step title="Pre-deployment Testing">
+    ```bash
+    # Run tests
+    npm run test
+    
+    # Check types
+    npm run lint
+    
+    # Build locally
+    npm run build
+    ```
+  </Step>
+
+  <Step title="Database Migration">
+    ```bash
+    # Deploy migrations
+    npx prisma migrate deploy
+    
+    # Verify schema
+    npx prisma db pull
+    ```
+  </Step>
+
+  <Step title="Application Deployment">
+    ```bash
+    # Build and tag image
+    docker build -t vulntrack:v1.0.0 .
+    
+    # Push to registry
+    docker push registry.example.com/vulntrack:v1.0.0
+    
+    # Deploy (example with kubectl)
+    kubectl set image deployment/vulntrack \
+      vulntrack=registry.example.com/vulntrack:v1.0.0
+    ```
+  </Step>
+
+  <Step title="Post-deployment Verification">
+    ```bash
+    # Check health
+    curl https://vulntrack.example.com/api/health
+    
+    # Monitor logs
+    kubectl logs -f deployment/vulntrack
+    
+    # Test critical paths
+    # - User login
+    # - Vulnerability creation
+    # - Dashboard loading
+    ```
+  </Step>
+</Steps>
+
+## Zero-Downtime Deployments
+
+For production environments, implement rolling updates:
+
+```yaml kubernetes-deployment.yaml
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  minReadySeconds: 10
+  template:
+    spec:
+      containers:
+      - name: vulntrack
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 5
+          periodSeconds: 5
+```
+
+## Disaster Recovery
+
+<Steps>
+  <Step title="Document Recovery Procedures">
+    Maintain runbooks for:
+    - Database restoration
+    - Application rollback
+    - DNS failover
+    - Data center migration
+  </Step>
+
+  <Step title="Regular DR Drills">
+    Test recovery procedures quarterly:
+    - Restore from backup to test environment
+    - Verify data integrity
+    - Measure recovery time objective (RTO)
+  </Step>
+
+  <Step title="Backup Infrastructure">
+    Consider multi-region deployment:
+    - Active-passive for cost efficiency
+    - Active-active for mission-critical deployments
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+### Common Production Issues
+
+<AccordionGroup>
+  <Accordion title="High Database Connection Count">
+    **Symptoms**: "Too many connections" errors
+    
+    **Solutions**:
+    - Reduce `connection_limit` in DATABASE_URL
+    - Implement connection pooling (PgBouncer)
+    - Scale database instance
+  </Accordion>
+
+  <Accordion title="Memory Leaks">
+    **Symptoms**: Increasing memory usage over time
+    
+    **Solutions**:
+    - Use Node.js heap snapshots
+    - Check for unclosed Prisma clients
+    - Implement memory limits and auto-restart policies
+  </Accordion>
+
+  <Accordion title="Slow Query Performance">
+    **Symptoms**: High response times, database CPU spikes
+    
+    **Solutions**:
+    - Enable query logging
+    - Add indexes to frequently queried fields
+    - Use database query analyzer
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Security Hardening" icon="shield" href="/deployment/security">
+    Implement security best practices
+  </Card>
+  <Card title="Docker Deployment" icon="docker" href="/deployment/docker">
+    Container deployment guide
+  </Card>
+</CardGroup>

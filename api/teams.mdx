@@ -1,0 +1,354 @@
+---
+title: 'Teams'
+description: 'Team management and member operations'
+---
+
+## Overview
+
+VulnTrack is built on a **multi-tenant architecture** where every user belongs to a team. Teams provide complete data isolation - users can only access vulnerabilities and resources within their own team.
+
+## Team Structure
+
+A team consists of:
+
+- **Team ID**: Unique identifier
+- **Team Name**: Organization name
+- **Members**: Users with assigned roles (Admin, Contributor, Viewer)
+- **Vulnerabilities**: Scoped to the team
+- **Invitations**: Pending user invitations
+
+## Team Creation
+
+Teams are created automatically in these scenarios:
+
+### First User Registration
+
+The first user to register creates the initial team:
+
+```typescript
+// In registerUser action
+if (userCount === 0) {
+  const team = await prisma.team.create({
+    data: { name: "Didactic Organization" }
+  })
+  userData.teamId = team.id
+  userData.role = "ADMIN"
+}
+```
+
+### Self-Service Registration
+
+Users who register without an invitation token create their own team:
+
+```typescript
+const teamName = `${name}'s Organization`
+const team = await prisma.team.create({
+  data: { name: teamName }
+})
+userId.teamId = team.id
+userId.role = "ADMIN" // Auto-assigned as admin
+```
+
+### Invitation-Based Registration
+
+Users who register with an invitation token join the inviter's team:
+
+```typescript
+const invitation = await prisma.invitation.findUnique({
+  where: { token: invitationToken }
+})
+
+userData.teamId = invitation.teamId
+userData.role = invitation.role // As specified in invitation
+```
+
+## getTeamMembers
+
+Retrieve all members of the current user's team.
+
+```typescript
+import { getTeamMembers } from '@/app/actions/vulnerabilities'
+
+const result = await getTeamMembers()
+```
+
+**Response:**
+
+<ResponseField name="success" type="boolean">
+  Operation status
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Array of team member objects:
+  - `id`: User ID
+  - `name`: Display name
+  - `email`: Email address
+  - `role`: User role (ADMIN, CONTRIBUTOR, VIEWER)
+</ResponseField>
+
+**Self-Healing:**
+
+If an admin user has no team (edge case from data migration), the function automatically:
+1. Creates a new team named "My Organization"
+2. Assigns the admin to that team
+3. Returns the user as the sole member
+
+## Team Isolation
+
+All server actions enforce strict team isolation:
+
+```typescript
+export async function getVulnerabilities() {
+  const session = await getServerSession(authOptions)
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { teamId: true, role: true }
+  })
+
+  // Scope query to user's team
+  const vulnerabilities = await prisma.vulnerability.findMany({
+    where: { teamId: user.teamId }
+  })
+
+  return { success: true, data: vulnerabilities }
+}
+```
+
+### Cross-Tenant Protection
+
+Attempts to access resources from another team are blocked:
+
+```typescript
+const vulnerability = await prisma.vulnerability.findUnique({
+  where: { id: vulnId }
+})
+
+// Verify team membership
+if (user.teamId !== vulnerability.teamId) {
+  return {
+    success: false,
+    error: "Unauthorized: Cross-tenant access denied"
+  }
+}
+```
+
+This protection applies to:
+- Vulnerabilities
+- Comments
+- Assignments
+- User management
+- Invitations
+- Audit logs
+
+## Workspace Consolidation
+
+For data recovery or migration scenarios, admins can consolidate orphaned resources.
+
+### consolidateWorkspace
+
+Moves all orphaned users and vulnerabilities (with `teamId: null`) to the admin's team.
+
+```typescript
+import { consolidateWorkspace } from '@/app/actions/admin'
+
+const result = await consolidateWorkspace()
+```
+
+**Authorization:**
+
+- Admin role required
+- Admin must belong to a team
+
+**Operation:**
+
+1. Finds all users with `teamId: null`
+2. Assigns them to the admin's team
+3. Finds all vulnerabilities with `teamId: null`
+4. Assigns them to the admin's team
+
+<Warning>
+  This is a recovery operation for single-tenant deployments or data migration. Use with caution in multi-tenant environments.
+</Warning>
+
+**Response:**
+
+<ResponseField name="success" type="boolean">
+  Operation status
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Success message: "Workspace consolidated successfully."
+</ResponseField>
+
+## Team Member Management
+
+See the [Users API](/api/users) for detailed information on:
+
+- Inviting users to a team
+- Managing user roles
+- Updating user permissions
+- Removing team members
+
+## Team Assignment Context
+
+When assigning vulnerabilities, ensure the assignee is in the same team:
+
+```typescript
+import { assignVulnerability } from '@/app/actions/vulnerabilities'
+
+export async function assignVulnerability(
+  vulnerabilityId: string,
+  assigneeId: string
+) {
+  const vulnerability = await prisma.vulnerability.findUnique({
+    where: { id: vulnerabilityId },
+    select: { teamId: true }
+  })
+
+  const assignee = await prisma.user.findUnique({
+    where: { id: assigneeId },
+    select: { teamId: true }
+  })
+
+  // Verify same team
+  if (assignee.teamId !== vulnerability.teamId) {
+    return {
+      success: false,
+      error: "Assignee must be in the same team"
+    }
+  }
+
+  // Proceed with assignment
+}
+```
+
+## Team Roles and Permissions
+
+### ADMIN
+
+**Capabilities:**
+- View all team vulnerabilities (including pending)
+- Approve/reject vulnerability submissions
+- Assign vulnerabilities to team members
+- Invite new users to the team
+- Manage user roles
+- Delete users and revoke invitations
+- Access team settings
+- Consolidate workspace (recovery)
+
+**Restrictions:**
+- Cannot access other teams' data
+- Cannot delete vulnerabilities (only owners can)
+
+### CONTRIBUTOR
+
+**Capabilities:**
+- Create vulnerabilities (require admin approval)
+- Edit own vulnerabilities
+- View approved vulnerabilities
+- View own pending submissions
+- Add comments
+- Update status of own vulnerabilities
+
+**Restrictions:**
+- Cannot approve vulnerabilities
+- Cannot assign vulnerabilities
+- Cannot invite users
+- Cannot see other users' pending submissions
+
+### VIEWER
+
+**Capabilities:**
+- View approved vulnerabilities
+- Add comments
+- Read reports
+
+**Restrictions:**
+- Cannot create vulnerabilities
+- Cannot edit vulnerabilities
+- Cannot change status
+- Cannot perform admin functions
+
+## Team Data Scope
+
+All database queries are automatically scoped to the user's team:
+
+```typescript
+// Example: Building a team-scoped query
+const user = await prisma.user.findUnique({
+  where: { id: session.user.id },
+  select: { teamId: true, role: true }
+})
+
+let whereClause: any = {
+  teamId: user.teamId // Always scope to team
+}
+
+// Additional filters based on role
+if (user.role !== 'ADMIN') {
+  whereClause = {
+    ...whereClause,
+    OR: [
+      { approvalStatus: "APPROVED" },
+      { userId: session.user.id }
+    ]
+  }
+}
+
+const results = await prisma.vulnerability.findMany({
+  where: whereClause
+})
+```
+
+## Example: Team Dashboard
+
+```tsx
+import { getTeamMembers } from '@/app/actions/vulnerabilities'
+import { getUsers } from '@/app/actions/admin'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
+
+export default async function TeamDashboard() {
+  const session = await getServerSession(authOptions)
+  const membersResult = await getTeamMembers()
+
+  if (!membersResult.success) {
+    return <div>Error loading team</div>
+  }
+
+  const members = membersResult.data
+  const adminCount = members.filter(m => m.role === 'ADMIN').length
+  const contributorCount = members.filter(m => m.role === 'CONTRIBUTOR').length
+  const viewerCount = members.filter(m => m.role === 'VIEWER').length
+
+  return (
+    <div>
+      <h1>Team Overview</h1>
+      <div className="stats">
+        <div>Total Members: {members.length}</div>
+        <div>Admins: {adminCount}</div>
+        <div>Contributors: {contributorCount}</div>
+        <div>Viewers: {viewerCount}</div>
+      </div>
+      <ul>
+        {members.map(member => (
+          <li key={member.id}>
+            {member.name} ({member.email}) - {member.role}
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="User Management" icon="user-plus" href="/api/users">
+    Invite users and manage roles
+  </Card>
+  <Card title="Vulnerabilities" icon="shield-halved" href="/api/vulnerabilities">
+    Work with team vulnerabilities
+  </Card>
+</CardGroup>

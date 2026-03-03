@@ -1,0 +1,254 @@
+---
+title: Risk Scoring
+description: Unified risk assessment combining DREAD, STRIDE, and CVSS methodologies
+---
+
+## Overview
+
+VulnTrack implements a multi-framework risk scoring system that provides comprehensive security risk assessment. The platform combines three industry-standard methodologies:
+
+- **DREAD**: Quantitative risk rating (Microsoft model)
+- **STRIDE**: Threat classification framework
+- **CVSS**: Common Vulnerability Scoring System
+
+<Info>
+When importing CVEs from NIST NVD, VulnTrack automatically maps CVSS vectors to DREAD scores for unified risk assessment.
+</Info>
+
+## DREAD Scoring
+
+DREAD provides a numerical risk assessment across five dimensions:
+
+<Tabs>
+  <Tab title="Damage">
+    **Damage Potential** (0-10)
+    
+    How severe is the impact if the vulnerability is exploited?
+    
+    - **10**: Complete system compromise, data destruction
+    - **7-9**: Significant data breach, privilege escalation
+    - **4-6**: Limited data exposure, service disruption
+    - **1-3**: Minimal impact, isolated to single user
+  </Tab>
+  <Tab title="Reproducibility">
+    **Reproducibility** (0-10)
+    
+    How easy is it to reproduce the attack?
+    
+    - **10**: Exploit works every time, no special conditions
+    - **7-9**: Reliable exploit with minimal setup
+    - **4-6**: Requires specific timing or conditions
+    - **1-3**: Very difficult to reproduce, race conditions
+  </Tab>
+  <Tab title="Exploitability">
+    **Exploitability** (0-10)
+    
+    What level of skill is required to exploit this?
+    
+    - **10**: No special tools needed, script kiddie accessible
+    - **7-9**: Publicly available exploit tools exist
+    - **4-6**: Requires custom exploit development
+    - **1-3**: Advanced skills, deep system knowledge required
+  </Tab>
+  <Tab title="Affected Users">
+    **Affected Users** (0-10)
+    
+    How many users are impacted?
+    
+    - **10**: All users, system-wide impact
+    - **7-9**: Large subset of users, entire department
+    - **4-6**: Small group of users, specific roles
+    - **1-3**: Single user, admin intervention required
+  </Tab>
+  <Tab title="Discoverability">
+    **Discoverability** (0-10)
+    
+    How easy is it to discover this vulnerability?
+    
+    - **10**: Immediately visible, public knowledge
+    - **7-9**: Easy to find with basic reconnaissance
+    - **4-6**: Requires intentional probing, some analysis
+    - **1-3**: Deep packet inspection, reverse engineering needed
+  </Tab>
+</Tabs>
+
+### DREAD Calculation
+
+The total DREAD score is the average of all five components:
+
+```typescript
+// From src/lib/scoring.ts
+interface DreadScore {
+  damage: number          // 0-10
+  reproducibility: number // 0-10
+  exploitability: number  // 0-10
+  affectedUsers: number   // 0-10
+  discoverability: number // 0-10
+  total: number          // Average of above
+}
+
+score.total = (
+  score.damage + 
+  score.reproducibility + 
+  score.exploitability + 
+  score.affectedUsers + 
+  score.discoverability
+) / 5
+```
+
+<Note>
+DREAD scores range from 0-10. Scores above 7.0 indicate critical risk requiring immediate attention.
+</Note>
+
+## CVSS to DREAD Mapping
+
+When importing CVEs, VulnTrack automatically converts CVSS v3.1 vectors to DREAD scores:
+
+```typescript
+// From src/lib/scoring.ts:11
+export function mapCvssToDread(cvssVector: string): DreadScore {
+  // Example: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
+  
+  // 1. Attack Vector (AV) → Exploitability
+  if (cvssVector.includes("AV:N")) score.exploitability = 9 // Network
+  else if (cvssVector.includes("AV:A")) score.exploitability = 7 // Adjacent
+  else if (cvssVector.includes("AV:L")) score.exploitability = 5 // Local
+  else if (cvssVector.includes("AV:P")) score.exploitability = 2 // Physical
+  
+  // 2. Attack Complexity (AC) → Reproducibility
+  if (cvssVector.includes("AC:L")) score.reproducibility = 9 // Low complexity
+  else if (cvssVector.includes("AC:H")) score.reproducibility = 4 // High complexity
+  
+  // 3. Privileges Required (PR) → Discoverability (inverse)
+  if (cvssVector.includes("PR:N")) score.discoverability = 9 // None required
+  else if (cvssVector.includes("PR:L")) score.discoverability = 6 // Low privs
+  else if (cvssVector.includes("PR:H")) score.discoverability = 3 // High privs
+  
+  // 4. User Interaction (UI) + Scope (S) → Affected Users
+  if (cvssVector.includes("UI:N")) score.affectedUsers = 8 // No interaction
+  else if (cvssVector.includes("UI:R")) score.affectedUsers = 5 // Required
+  if (cvssVector.includes("S:C")) score.affectedUsers += 2 // Scope changed
+  
+  // 5. CIA Impact → Damage Potential
+  let impact = 0
+  if (cvssVector.includes("C:H")) impact += 3.3 // Confidentiality
+  else if (cvssVector.includes("C:L")) impact += 1.5
+  
+  if (cvssVector.includes("I:H")) impact += 3.3 // Integrity
+  else if (cvssVector.includes("I:L")) impact += 1.5
+  
+  if (cvssVector.includes("A:H")) impact += 3.3 // Availability
+  else if (cvssVector.includes("A:L")) impact += 1.5
+  
+  score.damage = Math.min(Math.round(impact), 10)
+  
+  return score
+}
+```
+
+## STRIDE Classification
+
+STRIDE identifies the category of security threats:
+
+<CardGroup cols={2}>
+  <Card title="Spoofing" icon="user-secret">
+    Identity spoofing, credential theft, authentication bypass
+  </Card>
+  <Card title="Tampering" icon="pen-to-square">
+    Data manipulation, unauthorized modifications, injection attacks
+  </Card>
+  <Card title="Repudiation" icon="ban">
+    Actions performed without audit trail, log tampering, non-repudiation failures
+  </Card>
+  <Card title="Information Disclosure" icon="eye">
+    Data leaks, unauthorized access to sensitive information, privacy violations
+  </Card>
+  <Card title="Denial of Service" icon="circle-xmark">
+    Service disruption, resource exhaustion, availability attacks
+  </Card>
+  <Card title="Elevation of Privilege" icon="arrow-up">
+    Privilege escalation, unauthorized access to restricted functions
+  </Card>
+</CardGroup>
+
+### STRIDE Schema
+
+```prisma
+// From prisma/schema.prisma:132
+model StrideScore {
+  id                    String  @id @default(uuid())
+  spoofing              Boolean @default(false)
+  tampering             Boolean @default(false)
+  reputation            Boolean
+  informationDisclosure Boolean @default(false)
+  denialOfService       Boolean @default(false)
+  elevationOfPrivilege  Boolean @default(false)
+  
+  vulnerabilityId       String  @unique
+  vulnerability         Vulnerability @relation(fields: [vulnerabilityId])
+}
+```
+
+<Warning>
+A single vulnerability can match multiple STRIDE categories. Complex attacks often combine several threat types (e.g., SQL injection may involve both **Tampering** and **Information Disclosure**).
+</Warning>
+
+## CVSS Integration
+
+VulnTrack stores raw CVSS scores from NIST NVD:
+
+```typescript
+// From src/app/actions/cve.ts:92
+const metrics = cveData.metrics
+if (metrics?.cvssMetricV31) {
+  cvssScore = metrics.cvssMetricV31[0].cvssData.baseScore
+} else if (metrics?.cvssMetricV30) {
+  cvssScore = metrics.cvssMetricV30[0].cvssData.baseScore
+} else if (metrics?.cvssMetricV2) {
+  cvssScore = metrics.cvssMetricV2[0].cvssData.baseScore
+}
+```
+
+### CVSS Priority
+
+1. **CVSS v3.1** (preferred)
+2. **CVSS v3.0** (fallback)
+3. **CVSS v2.0** (legacy support)
+
+## Risk Assessment Dashboard
+
+The platform calculates aggregate risk metrics across your vulnerability portfolio:
+
+```typescript
+const avgDread = vulnerabilities.reduce(
+  (sum, v) => sum + (v.dread?.total || 0), 
+  0
+) / vulnerabilities.length
+
+const riskLevel = 
+  avgDread > 7 ? "Critical" :
+  avgDread > 5 ? "High" :
+  avgDread > 3 ? "Medium" : "Low"
+```
+
+## KEV Integration
+
+<Info>
+VulnTrack checks CISA's Known Exploited Vulnerabilities (KEV) catalog and automatically boosts exploitability scores to 10 for active threats.
+</Info>
+
+```typescript
+// From src/app/actions/cve.ts:159
+const derivedDread = {
+  exploitability: isKEV ? 10 : Math.min(10, Math.ceil(cvssScore)),
+  // KEV vulnerabilities are being actively exploited
+}
+```
+
+## Best Practices
+
+1. **Use DREAD for Prioritization**: Sort by total DREAD score to identify highest-risk issues
+2. **Apply STRIDE for Remediation Planning**: Group similar threat types for coordinated fixes
+3. **Reference CVSS for Compliance**: Use official CVSS scores in audit reports and compliance documentation
+4. **Monitor KEV Status**: Prioritize KEV-listed vulnerabilities for immediate patching
+5. **Review Scores Regularly**: Re-assess DREAD scores as threat landscape evolves

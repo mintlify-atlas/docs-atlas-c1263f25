@@ -1,0 +1,336 @@
+---
+title: Authentication
+description: Configure NextAuth.js for secure credential-based authentication in VulnTrack
+---
+
+VulnTrack uses [NextAuth.js](https://next-auth.js.org/) v4 for authentication, with support for credential-based login and JWT session management.
+
+## Configuration Overview
+
+Authentication is configured in `src/lib/auth.ts` with the following components:
+
+- **Adapter:** Prisma Adapter for database session storage
+- **Session Strategy:** JWT (JSON Web Tokens)
+- **Provider:** Credentials provider with bcrypt password hashing
+- **Custom Pages:** Branded login and onboarding flows
+
+## Authentication Flow
+
+<Steps>
+  <Step title="User submits credentials">
+    Email and password are sent to the credentials provider via the login form.
+  </Step>
+  
+  <Step title="Database lookup">
+    NextAuth queries the `User` table in PostgreSQL to find a matching email.
+  </Step>
+  
+  <Step title="Password verification">
+    Submitted password is compared against the stored bcrypt hash using `bcryptjs.compare()`.
+  </Step>
+  
+  <Step title="JWT creation">
+    On success, a JWT token is created containing:
+    - User ID
+    - User role (ADMIN, ANALYST, VIEWER)
+    - Onboarding status
+  </Step>
+  
+  <Step title="Session callback">
+    The JWT is decoded and user data is attached to the session object for use in the application.
+  </Step>
+</Steps>
+
+## Environment Variables
+
+Required configuration for NextAuth:
+
+<ParamField path="NEXTAUTH_URL" type="string" required>
+  Canonical URL of your deployment.
+  
+  **Development:** `http://localhost:3000`
+  
+  **Production:** `https://vulntrack.yourdomain.com`
+</ParamField>
+
+<ParamField path="NEXTAUTH_SECRET" type="string" required>
+  Secret key for signing and encrypting JWT tokens.
+  
+  Generate with: `openssl rand -base64 32`
+  
+  <Warning>
+    This secret must be kept secure. Changing it will invalidate all active sessions.
+  </Warning>
+</ParamField>
+
+## Session Configuration
+
+VulnTrack uses JWT-based sessions for stateless authentication:
+
+```typescript src/lib/auth.ts
+session: {
+  strategy: "jwt",
+}
+```
+
+**Benefits:**
+- No database queries for session validation
+- Horizontal scaling without session stores
+- Reduced database load
+
+**Session Data:**
+- `user.id` - Unique user identifier
+- `user.email` - User email address
+- `user.name` - Display name
+- `user.role` - Access control role (ADMIN, ANALYST, VIEWER)
+- `user.isOnboarded` - Onboarding completion status
+
+## Credentials Provider
+
+VulnTrack implements a custom credentials provider for email/password authentication:
+
+### Password Hashing
+
+Passwords are hashed using **bcrypt** with automatic salt generation:
+
+```typescript
+import { compare } from "bcryptjs"
+
+const isPasswordValid = await compare(credentials.password, user.password)
+```
+
+<Note>
+  Bcrypt automatically handles salt generation and storage within the hash string.
+</Note>
+
+### Authorization Logic
+
+The `authorize()` function in `src/lib/auth.ts:23` handles:
+
+1. **Validation** - Checks that email and password are provided
+2. **User Lookup** - Queries database for user by email
+3. **Password Check** - Verifies password against stored hash
+4. **Return User Object** - Returns user data for JWT encoding
+
+### Security Features
+
+- Constant-time password comparison (bcrypt)
+- No password returned in session data
+- Failed login attempts return generic error messages (prevents email enumeration)
+
+## Custom Pages
+
+VulnTrack overrides default NextAuth pages:
+
+<ParamField path="signIn" value="/login">
+  Custom branded login page with VulnTrack styling.
+</ParamField>
+
+<ParamField path="newUser" value="/onboarding">
+  Post-registration onboarding flow (Note: primarily for OAuth flows).
+</ParamField>
+
+## JWT Callbacks
+
+VulnTrack extends JWT tokens with custom claims:
+
+### JWT Callback (src/lib/auth.ts:70)
+
+Executed when a token is created or updated:
+
+```typescript
+async jwt({ token, user }) {
+  if (user) {
+    token.id = user.id
+    token.role = user.role
+    token.isOnboarded = user.isOnboarded
+  }
+  
+  // Refresh user data from database
+  if (token.id) {
+    const freshUser = await prisma.user.findUnique({
+      where: { id: token.id },
+      select: { role: true, isOnboarded: true }
+    })
+    if (freshUser) {
+      token.role = freshUser.role
+      token.isOnboarded = freshUser.isOnboarded
+    }
+  }
+  return token
+}
+```
+
+**Features:**
+- Fetches fresh user data on every token use
+- Ensures role changes are reflected immediately
+- Updates onboarding status dynamically
+
+### Session Callback (src/lib/auth.ts:59)
+
+Attaches user data to the session object:
+
+```typescript
+async session({ session, token }) {
+  return {
+    ...session,
+    user: {
+      ...session.user,
+      id: token.id,
+      role: token.role,
+      isOnboarded: token.isOnboarded,
+    }
+  }
+}
+```
+
+## Role-Based Access Control
+
+VulnTrack implements three user roles:
+
+<ParamField path="ADMIN" type="role">
+  Full system access:
+  - Create and manage teams
+  - Send invitations
+  - Manage all vulnerabilities
+  - Access audit logs
+  - Configure system settings
+</ParamField>
+
+<ParamField path="ANALYST" type="role">
+  Operational access:
+  - Create and edit vulnerabilities
+  - Assign vulnerabilities
+  - Add comments and assessments
+  - Generate reports
+</ParamField>
+
+<ParamField path="VIEWER" type="role">
+  Read-only access:
+  - View vulnerabilities
+  - Read comments
+  - Access reports
+  - Cannot modify data
+</ParamField>
+
+## Protecting Routes
+
+### Server Components
+
+Use `getServerSession` to protect server components:
+
+```typescript
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/lib/auth"
+import { redirect } from "next/navigation"
+
+export default async function ProtectedPage() {
+  const session = await getServerSession(authOptions)
+  
+  if (!session) {
+    redirect("/login")
+  }
+  
+  // Check role
+  if (session.user.role !== "ADMIN") {
+    return <div>Access Denied</div>
+  }
+  
+  return <div>Admin Content</div>
+}
+```
+
+### Server Actions
+
+Protect server actions with session checks:
+
+```typescript
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/lib/auth"
+
+export async function createVulnerability(data: FormData) {
+  const session = await getServerSession(authOptions)
+  
+  if (!session) {
+    throw new Error("Unauthorized")
+  }
+  
+  if (!["ADMIN", "ANALYST"].includes(session.user.role)) {
+    throw new Error("Insufficient permissions")
+  }
+  
+  // Proceed with action
+}
+```
+
+### Client Components
+
+Use `useSession` hook for client-side checks:
+
+```typescript
+import { useSession } from "next-auth/react"
+
+export function ClientComponent() {
+  const { data: session, status } = useSession()
+  
+  if (status === "loading") {
+    return <div>Loading...</div>
+  }
+  
+  if (status === "unauthenticated") {
+    return <div>Please log in</div>
+  }
+  
+  return <div>Welcome, {session.user.name}</div>
+}
+```
+
+## Invitation System
+
+VulnTrack uses an invitation-only registration system:
+
+<Steps>
+  <Step title="Admin creates invitation">
+    Admin generates a unique invitation token with expiration (typically 24 hours).
+  </Step>
+  
+  <Step title="Invitation email sent">
+    User receives email with invitation link containing the token.
+  </Step>
+  
+  <Step title="User completes registration">
+    User creates account using the invitation link. Token is validated and consumed.
+  </Step>
+  
+  <Step title="Role assignment">
+    User is automatically assigned the role specified in the invitation.
+  </Step>
+</Steps>
+
+<Note>
+  See [Email Configuration](/configuration/email) for invitation email setup.
+</Note>
+
+## Security Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Secure secrets" icon="key">
+    Generate strong `NEXTAUTH_SECRET` values and never commit them to version control.
+  </Card>
+  
+  <Card title="HTTPS in production" icon="lock">
+    Always use HTTPS in production. NextAuth will reject non-HTTPS URLs.
+  </Card>
+  
+  <Card title="Rate limiting" icon="gauge">
+    Implement rate limiting on login endpoints to prevent brute force attacks.
+  </Card>
+  
+  <Card title="Password policy" icon="shield">
+    Enforce minimum password requirements during registration (length, complexity).
+  </Card>
+</CardGroup>
+
+<Warning>
+  **Security Note:** VulnTrack stores password hashes using bcrypt, but you should still implement additional security measures like rate limiting, account lockouts, and 2FA for high-security deployments.
+</Warning>

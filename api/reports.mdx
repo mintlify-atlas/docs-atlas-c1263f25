@@ -1,0 +1,449 @@
+---
+title: 'Reports'
+description: 'Report generation and data export'
+---
+
+## Overview
+
+VulnTrack provides reporting capabilities for vulnerability data, allowing teams to generate compliance reports, executive summaries, and data exports.
+
+<Warning>
+  The reporting API is currently in development. This page documents the planned architecture and expected functionality. Check back for implementation updates.
+</Warning>
+
+## Report Types
+
+VulnTrack will support multiple report formats:
+
+### PDF Reports
+
+- Executive Summary
+- Detailed Vulnerability Report
+- DREAD/STRIDE Analysis
+- Compliance Reports (SOC 2, ISO 27001)
+
+### CSV Exports
+
+- Vulnerability list with all fields
+- DREAD scores matrix
+- STRIDE categorization
+- User activity logs
+
+### JSON Exports
+
+- Full data export for API integration
+- Backup and migration
+
+## Planned API Endpoints
+
+Reports will be generated via server actions:
+
+### generatePDFReport (Planned)
+
+Generate a PDF report for vulnerabilities.
+
+```typescript
+// Future implementation
+import { generatePDFReport } from '@/app/actions/reports'
+
+const result = await generatePDFReport({
+  type: 'executive-summary',
+  filters: {
+    severity: ['CRITICAL', 'HIGH'],
+    status: ['OPEN', 'IN_PROGRESS'],
+    dateRange: {
+      start: '2024-01-01',
+      end: '2024-12-31'
+    }
+  },
+  includeScoring: true,
+  includeMitigations: true
+})
+
+// Returns: { success: true, url: '/api/reports/download/abc123.pdf' }
+```
+
+<ParamField path="type" type="string" required>
+  Report type:
+  - `executive-summary`: High-level overview
+  - `detailed`: Full vulnerability details
+  - `compliance`: Compliance-focused report
+  - `scoring-analysis`: DREAD/STRIDE/CVSS analysis
+</ParamField>
+
+<ParamField path="filters" type="object">
+  Filtering options:
+  - `severity`: Array of severity levels
+  - `status`: Array of status values
+  - `dateRange`: Start and end dates
+  - `assignedTo`: User ID filter
+  - `tags`: Tag filters
+</ParamField>
+
+<ParamField path="includeScoring" type="boolean">
+  Include DREAD, STRIDE, and CVSS scores (default: true)
+</ParamField>
+
+<ParamField path="includeMitigations" type="boolean">
+  Include mitigation steps (default: true)
+</ParamField>
+
+### generateCSVExport (Planned)
+
+Export vulnerabilities to CSV format.
+
+```typescript
+// Future implementation
+import { generateCSVExport } from '@/app/actions/reports'
+
+const result = await generateCSVExport({
+  columns: [
+    'title',
+    'severity',
+    'status',
+    'cvssScore',
+    'dreadTotal',
+    'assignedTo',
+    'createdAt'
+  ],
+  filters: {
+    status: ['OPEN']
+  }
+})
+
+// Returns: { success: true, url: '/api/reports/download/export.csv' }
+```
+
+<ParamField path="columns" type="array" required>
+  Column selection:
+  - `title`, `description`, `severity`, `status`
+  - `cveId`, `cvssScore`, `asset`
+  - `dreadTotal`, `dread.*` (individual scores)
+  - `strideFlags` (comma-separated active flags)
+  - `assignedTo`, `createdBy`, `createdAt`, `updatedAt`
+</ParamField>
+
+<ParamField path="filters" type="object">
+  Same filtering options as PDF reports
+</ParamField>
+
+### getReportHistory (Planned)
+
+Retrieve previously generated reports.
+
+```typescript
+// Future implementation
+import { getReportHistory } from '@/app/actions/reports'
+
+const result = await getReportHistory()
+
+// Returns list of generated reports with download links
+```
+
+## Workaround: Current Data Export
+
+Until the reporting API is implemented, you can export vulnerability data programmatically:
+
+### Export to JSON
+
+```typescript
+import { getVulnerabilities } from '@/app/actions/vulnerabilities'
+
+export async function exportJSON() {
+  const result = await getVulnerabilities()
+  
+  if (!result.success) {
+    throw new Error(result.error)
+  }
+  
+  const jsonData = JSON.stringify(result.data, null, 2)
+  const blob = new Blob([jsonData], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `vulntrack-export-${Date.now()}.json`
+  a.click()
+  
+  URL.revokeObjectURL(url)
+}
+```
+
+### Export to CSV (Client-Side)
+
+```typescript
+import { getVulnerabilities } from '@/app/actions/vulnerabilities'
+
+export async function exportCSV() {
+  const result = await getVulnerabilities()
+  
+  if (!result.success) {
+    throw new Error(result.error)
+  }
+  
+  // CSV headers
+  const headers = [
+    'Title',
+    'Severity',
+    'Status',
+    'CVE ID',
+    'CVSS Score',
+    'DREAD Total',
+    'Created'
+  ]
+  
+  // CSV rows
+  const rows = result.data.map(vuln => [
+    vuln.title,
+    vuln.severity,
+    vuln.status,
+    vuln.cveId || '',
+    vuln.cvssScore || '',
+    vuln.dread?.total || '',
+    new Date(vuln.createdAt).toISOString().split('T')[0]
+  ])
+  
+  // Combine
+  const csv = [
+    headers.join(','),
+    ...rows.map(row => row.map(cell => 
+      `"${String(cell).replace(/"/g, '""')}"`
+    ).join(','))
+  ].join('\n')
+  
+  // Download
+  const blob = new Blob([csv], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `vulntrack-export-${Date.now()}.csv`
+  a.click()
+  
+  URL.revokeObjectURL(url)
+}
+```
+
+## Report Templates (Planned)
+
+Reports will use customizable templates:
+
+### Executive Summary Template
+
+- Overview metrics (total vulns, by severity, by status)
+- Trend analysis (new vs. resolved)
+- Top risks (highest DREAD scores)
+- Compliance status
+- Remediation timeline
+
+### Detailed Report Template
+
+- Full vulnerability listings
+- Individual DREAD/STRIDE breakdowns
+- Mitigation steps
+- Assignment tracking
+- Comments and collaboration history
+
+### Compliance Template
+
+- Control mapping (SOC 2, ISO 27001)
+- Evidence links
+- Remediation status
+- Audit trail
+
+## Analytics Integration
+
+Reports will include analytics:
+
+- **Severity Distribution**: Chart showing vulnerability counts by severity
+- **Status Pipeline**: Kanban-style view of vulnerability progress
+- **DREAD Heatmap**: Visual representation of risk scores
+- **STRIDE Coverage**: Which threat categories are most common
+- **MTTR (Mean Time to Resolve)**: Average resolution time by severity
+
+## Scheduling (Future Feature)
+
+Automatic report generation and delivery:
+
+```typescript
+// Future API
+import { scheduleReport } from '@/app/actions/reports'
+
+const result = await scheduleReport({
+  type: 'executive-summary',
+  frequency: 'weekly',
+  dayOfWeek: 1, // Monday
+  recipients: ['admin@example.com', 'security@example.com'],
+  filters: {
+    severity: ['CRITICAL', 'HIGH']
+  }
+})
+```
+
+## Security Considerations
+
+### Team Isolation
+
+Reports will respect team boundaries:
+- Users can only generate reports for their team's data
+- Report downloads require authentication
+- Temporary download URLs expire after 1 hour
+
+### Audit Logging
+
+Report generation will be logged:
+
+```typescript
+await logAudit(
+  "GENERATE_REPORT",
+  "Report",
+  reportId,
+  `Generated ${reportType} report with ${vulnCount} vulnerabilities`
+)
+```
+
+### Data Sanitization
+
+Reports will sanitize sensitive data:
+- Personal information redacted in shared reports
+- Configurable field inclusion/exclusion
+- Watermarking for confidential reports
+
+## Example: Report Generation UI
+
+```tsx
+'use client'
+
+import { useState, useTransition } from 'react'
+import { getVulnerabilities } from '@/app/actions/vulnerabilities'
+
+export function ReportGenerator() {
+  const [isPending, startTransition] = useTransition()
+  const [filters, setFilters] = useState({
+    severity: [],
+    status: []
+  })
+
+  async function handleExport(format: 'json' | 'csv') {
+    startTransition(async () => {
+      const result = await getVulnerabilities()
+      
+      if (!result.success) {
+        alert(result.error)
+        return
+      }
+      
+      // Filter data
+      let data = result.data
+      if (filters.severity.length > 0) {
+        data = data.filter(v => filters.severity.includes(v.severity))
+      }
+      if (filters.status.length > 0) {
+        data = data.filter(v => filters.status.includes(v.status))
+      }
+      
+      // Export based on format
+      if (format === 'json') {
+        exportJSON(data)
+      } else {
+        exportCSV(data)
+      }
+    })
+  }
+
+  return (
+    <div>
+      <h2>Generate Report</h2>
+      
+      <div>
+        <label>Severity:</label>
+        <select
+          multiple
+          value={filters.severity}
+          onChange={(e) => setFilters({
+            ...filters,
+            severity: Array.from(e.target.selectedOptions, o => o.value)
+          })}
+        >
+          <option value="CRITICAL">Critical</option>
+          <option value="HIGH">High</option>
+          <option value="MEDIUM">Medium</option>
+          <option value="LOW">Low</option>
+        </select>
+      </div>
+      
+      <div>
+        <label>Status:</label>
+        <select
+          multiple
+          value={filters.status}
+          onChange={(e) => setFilters({
+            ...filters,
+            status: Array.from(e.target.selectedOptions, o => o.value)
+          })}
+        >
+          <option value="OPEN">Open</option>
+          <option value="IN_PROGRESS">In Progress</option>
+          <option value="RESOLVED">Resolved</option>
+          <option value="WONT_FIX">Won't Fix</option>
+        </select>
+      </div>
+      
+      <div>
+        <button
+          onClick={() => handleExport('json')}
+          disabled={isPending}
+        >
+          Export JSON
+        </button>
+        <button
+          onClick={() => handleExport('csv')}
+          disabled={isPending}
+        >
+          Export CSV
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function exportJSON(data: any[]) {
+  const json = JSON.stringify(data, null, 2)
+  const blob = new Blob([json], { type: 'application/json' })
+  downloadBlob(blob, `report-${Date.now()}.json`)
+}
+
+function exportCSV(data: any[]) {
+  // CSV implementation from earlier example
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+```
+
+## Contributing
+
+Interested in implementing the reporting API? Check the GitHub repository for open issues and contribution guidelines.
+
+Key areas for contribution:
+- PDF generation (using libraries like jsPDF or Puppeteer)
+- Report templates and styling
+- Scheduling infrastructure
+- Analytics calculations
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Vulnerabilities" icon="shield-halved" href="/api/vulnerabilities">
+    Access vulnerability data for custom reports
+  </Card>
+  <Card title="Scoring" icon="calculator" href="/api/scoring">
+    Understand scoring for report analytics
+  </Card>
+</CardGroup>

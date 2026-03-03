@@ -1,0 +1,323 @@
+---
+title: 'Authentication'
+description: 'NextAuth.js integration and session management'
+---
+
+## Overview
+
+VulnTrack uses **NextAuth.js** for authentication, configured with JWT sessions and credentials-based login. All server actions automatically validate the user session before executing.
+
+## Authentication Configuration
+
+The auth configuration is defined in `src/lib/auth.ts`:
+
+```typescript
+import { NextAuthOptions } from "next-auth"
+import CredentialsProvider from "next-auth/providers/credentials"
+import { PrismaAdapter } from "@next-auth/prisma-adapter"
+
+export const authOptions: NextAuthOptions = {
+  adapter: PrismaAdapter(prisma),
+  session: {
+    strategy: "jwt",
+  },
+  pages: {
+    signIn: "/login",
+  },
+  providers: [
+    CredentialsProvider({
+      name: "Credentials",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" }
+      },
+      async authorize(credentials) {
+        // Validates credentials and returns user object
+      }
+    })
+  ],
+  callbacks: {
+    async session({ session, token }) {
+      return {
+        ...session,
+        user: {
+          ...session.user,
+          id: token.id,
+          role: token.role,
+          isOnboarded: token.isOnboarded,
+        }
+      }
+    },
+    async jwt({ token, user }) {
+      // Includes user metadata in JWT
+      // Refreshes data from database on each request
+    }
+  }
+}
+```
+
+## Session Object
+
+The session object contains:
+
+<ResponseField name="user.id" type="string">
+  Unique user identifier
+</ResponseField>
+
+<ResponseField name="user.email" type="string">
+  User's email address
+</ResponseField>
+
+<ResponseField name="user.name" type="string">
+  User's display name
+</ResponseField>
+
+<ResponseField name="user.role" type="'ADMIN' | 'CONTRIBUTOR' | 'VIEWER'">
+  User's role within their team
+</ResponseField>
+
+<ResponseField name="user.isOnboarded" type="boolean">
+  Whether the user has completed onboarding
+</ResponseField>
+
+## Getting the Current Session
+
+### In Server Actions
+
+```typescript
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/lib/auth"
+
+export async function protectedAction() {
+  const session = await getServerSession(authOptions)
+
+  if (!session?.user?.id) {
+    return { success: false, error: "Unauthorized" }
+  }
+
+  // Action logic here
+  return { success: true, data: result }
+}
+```
+
+### In Server Components
+
+```tsx
+import { getServerSession } from "next-auth"
+import { authOptions } from "@/lib/auth"
+
+export default async function ProtectedPage() {
+  const session = await getServerSession(authOptions)
+
+  if (!session) {
+    redirect('/login')
+  }
+
+  return <div>Welcome, {session.user.name}</div>
+}
+```
+
+### In Client Components
+
+```tsx
+'use client'
+
+import { useSession } from 'next-auth/react'
+
+export function UserProfile() {
+  const { data: session, status } = useSession()
+
+  if (status === 'loading') return <div>Loading...</div>
+  if (status === 'unauthenticated') return <div>Not logged in</div>
+
+  return <div>Hello, {session.user.name}</div>
+}
+```
+
+## Authentication Actions
+
+### registerUser
+
+Register a new user account.
+
+<Note>
+The first user automatically becomes an ADMIN. Subsequent users require an invitation token or create a new team as ADMIN.
+</Note>
+
+```typescript
+import { registerUser } from '@/app/actions/auth'
+
+const result = await registerUser({
+  email: 'user@example.com',
+  password: 'SecurePass123!',
+  name: 'John Doe',
+  token: 'invitation-token' // Optional
+})
+```
+
+<ParamField path="email" type="string" required>
+  User's email address
+</ParamField>
+
+<ParamField path="password" type="string" required>
+  Password meeting security requirements:
+  - At least 8 characters
+  - 1 uppercase letter
+  - 1 lowercase letter
+  - 1 number
+  - 1 special character (@$!%*?&)
+</ParamField>
+
+<ParamField path="name" type="string" required>
+  User's display name
+</ParamField>
+
+<ParamField path="token" type="string">
+  Optional invitation token for joining an existing team
+</ParamField>
+
+**Response:**
+
+<ResponseField name="success" type="boolean">
+  Whether registration succeeded
+</ResponseField>
+
+<ResponseField name="data.id" type="string">
+  The created user's ID
+</ResponseField>
+
+<ResponseField name="data.email" type="string">
+  The user's email
+</ResponseField>
+
+<ResponseField name="error" type="string">
+  Error message if registration failed
+</ResponseField>
+
+## Password Policy
+
+Passwords must meet these requirements:
+
+- Minimum 8 characters
+- At least one uppercase letter (A-Z)
+- At least one lowercase letter (a-z)
+- At least one digit (0-9)
+- At least one special character (@$!%*?&)
+
+Validation is enforced server-side:
+
+```typescript
+const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/
+if (!passwordRegex.test(password)) {
+  return { success: false, error: "Password does not meet requirements" }
+}
+```
+
+## Rate Limiting
+
+Registration attempts are rate-limited to prevent abuse:
+
+- **Limit:** 5 attempts per minute per IP
+- **Window:** 60 seconds
+
+```typescript
+import { rateLimit } from "@/lib/rate-limit"
+
+if (!rateLimit("registration_attempt", 5, 60000)) {
+  return { success: false, error: "Too many attempts. Please try again later." }
+}
+```
+
+## Role-Based Access Control
+
+VulnTrack has three user roles:
+
+### ADMIN
+
+- Full access to all team resources
+- Can invite users and assign roles
+- Can approve pending vulnerabilities
+- Can assign vulnerabilities to team members
+- Manage team settings
+
+### CONTRIBUTOR
+
+- Create vulnerabilities (require approval)
+- Edit own vulnerabilities
+- View approved vulnerabilities
+- Add comments
+
+### VIEWER
+
+- View approved vulnerabilities
+- Add comments
+- Read-only access to reports
+
+## Protecting Server Actions
+
+All server actions should validate both authentication and authorization:
+
+```typescript
+export async function updateVulnerability(id: string, data: any) {
+  // 1. Check authentication
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) {
+    return { success: false, error: "Unauthorized" }
+  }
+
+  // 2. Check authorization
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { role: true, teamId: true }
+  })
+
+  const existing = await prisma.vulnerability.findUnique({
+    where: { id }
+  })
+
+  // 3. Verify team isolation
+  if (existing.teamId !== user?.teamId) {
+    return { success: false, error: "Unauthorized" }
+  }
+
+  // 4. Verify ownership or admin role
+  if (existing.userId !== session.user.id && user?.role !== 'ADMIN') {
+    return { success: false, error: "Unauthorized" }
+  }
+
+  // Proceed with update
+}
+```
+
+## Session Refresh
+
+JWT tokens are automatically refreshed with fresh user data from the database:
+
+```typescript
+async jwt({ token, user }) {
+  if (token.id) {
+    const freshUser = await prisma.user.findUnique({
+      where: { id: token.id },
+      select: { role: true, isOnboarded: true }
+    })
+    if (freshUser) {
+      token.role = freshUser.role
+      token.isOnboarded = freshUser.isOnboarded
+    }
+  }
+  return token
+}
+```
+
+This ensures role changes take effect immediately without requiring re-login.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="User Management" icon="users" href="/api/users">
+    Manage users, invitations, and roles
+  </Card>
+  <Card title="Vulnerabilities" icon="shield-halved" href="/api/vulnerabilities">
+    Work with vulnerability records
+  </Card>
+</CardGroup>

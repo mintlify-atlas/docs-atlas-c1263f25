@@ -1,0 +1,852 @@
+---
+title: 'Security Configuration'
+description: 'Security best practices and hardening for VulnTrack production deployments'
+---
+
+## Overview
+
+VulnTrack is a vulnerability tracking system that handles sensitive security data. This guide covers essential security configurations and best practices for production deployments.
+
+<Warning>
+  Security is critical for vulnerability management systems. Follow all recommendations in this guide before deploying to production.
+</Warning>
+
+## Authentication & Authorization
+
+### NextAuth Configuration
+
+VulnTrack uses NextAuth.js for authentication with JWT sessions:
+
+```typescript src/lib/auth.ts
+export const authOptions: NextAuthOptions = {
+  adapter: PrismaAdapter(prisma),
+  session: {
+    strategy: "jwt",
+    maxAge: 30 * 24 * 60 * 60, // 30 days
+  },
+  providers: [
+    CredentialsProvider({
+      // Credentials authentication
+    })
+  ],
+  callbacks: {
+    async jwt({ token, user }) {
+      // Include role and team info in JWT
+      if (user) {
+        token.id = user.id;
+        token.role = user.role;
+        token.isOnboarded = user.isOnboarded;
+      }
+      return token;
+    }
+  }
+}
+```
+
+### Secure Session Configuration
+
+<Steps>
+  <Step title="Generate secure NEXTAUTH_SECRET">
+    ```bash
+    # Generate a secure secret (minimum 32 characters)
+    openssl rand -base64 32
+    ```
+    
+    Add to `.env`:
+    ```bash
+    NEXTAUTH_SECRET=<generated-secret-here>
+    ```
+
+    <Warning>
+      Never use the same secret across environments. Generate unique secrets for development, staging, and production.
+    </Warning>
+  </Step>
+
+  <Step title="Configure secure cookies">
+    ```typescript
+    export const authOptions: NextAuthOptions = {
+      // ... other config
+      cookies: {
+        sessionToken: {
+          name: `__Secure-next-auth.session-token`,
+          options: {
+            httpOnly: true,
+            sameSite: 'lax',
+            path: '/',
+            secure: process.env.NODE_ENV === 'production'
+          }
+        }
+      }
+    }
+    ```
+  </Step>
+
+  <Step title="Set appropriate session timeouts">
+    Balance security and user experience:
+    - **High security**: 2-4 hours
+    - **Standard**: 24 hours
+    - **Low sensitivity**: 30 days (current default)
+  </Step>
+</Steps>
+
+### Password Security
+
+VulnTrack uses bcryptjs for password hashing:
+
+```typescript src/app/actions/auth.ts
+import { hash, compare } from 'bcryptjs';
+
+// Hashing passwords (on registration)
+const hashedPassword = await hash(password, 12);
+
+// Verifying passwords (on login)
+const isValid = await compare(password, user.password);
+```
+
+<Tip>
+  Implement password requirements:
+  - Minimum 12 characters
+  - Mix of uppercase, lowercase, numbers, and symbols
+  - Check against common password lists
+</Tip>
+
+### Password Policy Implementation
+
+```typescript src/lib/validation.ts
+import { z } from 'zod';
+
+export const passwordSchema = z
+  .string()
+  .min(12, 'Password must be at least 12 characters')
+  .regex(/[A-Z]/, 'Password must contain uppercase letter')
+  .regex(/[a-z]/, 'Password must contain lowercase letter')
+  .regex(/[0-9]/, 'Password must contain number')
+  .regex(/[^A-Za-z0-9]/, 'Password must contain special character');
+```
+
+## Role-Based Access Control (RBAC)
+
+### User Roles
+
+VulnTrack implements three user roles:
+
+| Role | Permissions | Use Case |
+|------|-------------|----------|
+| **ADMIN** | Full system access, user management, settings | System administrators |
+| **ANALYST** | Create, edit, delete vulnerabilities | Security analysts |
+| **VIEWER** | Read-only access | Stakeholders, auditors |
+
+### Implementing Role Checks
+
+<CodeGroup>
+```typescript Server Actions
+// src/app/actions/vulnerabilities.ts
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
+
+export async function createVulnerability(data: VulnerabilityInput) {
+  const session = await getServerSession(authOptions);
+  
+  // Check authentication
+  if (!session?.user) {
+    throw new Error('Unauthorized');
+  }
+  
+  // Check role authorization
+  if (session.user.role === 'VIEWER') {
+    throw new Error('Insufficient permissions');
+  }
+  
+  // Proceed with creation
+  return await prisma.vulnerability.create({
+    data: {
+      ...data,
+      userId: session.user.id,
+      teamId: session.user.teamId
+    }
+  });
+}
+```
+
+```typescript API Routes
+// src/app/api/users/route.ts
+import { NextRequest } from 'next/server';
+import { getServerSession } from 'next-auth';
+
+export async function POST(req: NextRequest) {
+  const session = await getServerSession(authOptions);
+  
+  // Only ADMINs can create users
+  if (session?.user?.role !== 'ADMIN') {
+    return Response.json(
+      { error: 'Forbidden' },
+      { status: 403 }
+    );
+  }
+  
+  // Process request
+}
+```
+
+```typescript Middleware
+// src/middleware.ts
+import { withAuth } from 'next-auth/middleware';
+
+export default withAuth({
+  callbacks: {
+    authorized: ({ req, token }) => {
+      // Protect admin routes
+      if (req.nextUrl.pathname.startsWith('/admin')) {
+        return token?.role === 'ADMIN';
+      }
+      return !!token;
+    }
+  }
+});
+
+export const config = {
+  matcher: ['/dashboard/:path*', '/admin/:path*', '/api/:path*']
+};
+```
+</CodeGroup>
+
+### Team Isolation
+
+VulnTrack implements multi-tenancy with team isolation:
+
+```typescript src/lib/data-access.ts
+// Always scope queries by team
+export async function getVulnerabilities(userId: string) {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { teamId: true, role: true }
+  });
+  
+  if (!user?.teamId) {
+    throw new Error('User not associated with a team');
+  }
+  
+  return await prisma.vulnerability.findMany({
+    where: {
+      teamId: user.teamId // Team isolation
+    }
+  });
+}
+```
+
+<Warning>
+  Always include `teamId` in database queries to prevent data leakage between teams.
+</Warning>
+
+## Database Security
+
+### Connection Security
+
+<Steps>
+  <Step title="Enable SSL/TLS">
+    ```bash .env
+    DATABASE_URL="postgresql://user:pass@host:5432/db?sslmode=require"
+    ```
+    
+    SSL modes:
+    - `require`: Enforce SSL
+    - `verify-ca`: Verify certificate authority
+    - `verify-full`: Verify CA and hostname
+  </Step>
+
+  <Step title="Use connection pooling">
+    Prevent connection exhaustion attacks:
+    ```bash
+    DATABASE_URL="postgresql://user:pass@host:5432/db?sslmode=require&connection_limit=20"
+    ```
+  </Step>
+
+  <Step title="Restrict database user permissions">
+    ```sql
+    -- Create application user with limited permissions
+    CREATE USER vulntrack_app WITH PASSWORD 'secure_password';
+    
+    -- Grant only necessary permissions
+    GRANT CONNECT ON DATABASE vulntrack TO vulntrack_app;
+    GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO vulntrack_app;
+    GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO vulntrack_app;
+    
+    -- Revoke dangerous permissions
+    REVOKE CREATE ON SCHEMA public FROM vulntrack_app;
+    ```
+  </Step>
+</Steps>
+
+### Database Security Best Practices
+
+<AccordionGroup>
+  <Accordion title="Network Isolation">
+    - Place database in private subnet
+    - Use security groups/firewall rules to restrict access
+    - Only allow connections from application servers
+    - Enable database audit logging
+  </Accordion>
+
+  <Accordion title="Encryption at Rest">
+    Enable encryption for:
+    - Database storage volumes
+    - Automated backups
+    - Snapshot copies
+    - Replica storage
+    
+    Most managed database services provide this by default.
+  </Accordion>
+
+  <Accordion title="Regular Security Updates">
+    - Keep PostgreSQL updated to latest patch version
+    - Subscribe to security advisories
+    - Test updates in staging before production
+    - Maintain update schedule (monthly recommended)
+  </Accordion>
+</AccordionGroup>
+
+## Secrets Management
+
+### Environment Variables
+
+<Warning>
+  Never commit `.env` files with real secrets to version control.
+</Warning>
+
+<CodeGroup>
+```bash AWS Secrets Manager
+#!/bin/bash
+# Fetch secrets from AWS Secrets Manager
+export DATABASE_URL=$(aws secretsmanager get-secret-value \
+  --secret-id prod/vulntrack/database-url \
+  --query SecretString --output text)
+
+export NEXTAUTH_SECRET=$(aws secretsmanager get-secret-value \
+  --secret-id prod/vulntrack/nextauth-secret \
+  --query SecretString --output text)
+```
+
+```bash HashiCorp Vault
+#!/bin/bash
+# Fetch secrets from Vault
+export DATABASE_URL=$(vault kv get -field=url secret/vulntrack/database)
+export NEXTAUTH_SECRET=$(vault kv get -field=secret secret/vulntrack/nextauth)
+```
+
+```yaml Kubernetes Secrets
+apiVersion: v1
+kind: Secret
+metadata:
+  name: vulntrack-secrets
+type: Opaque
+stringData:
+  database-url: postgresql://...
+  nextauth-secret: ...
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vulntrack
+spec:
+  template:
+    spec:
+      containers:
+      - name: vulntrack
+        envFrom:
+        - secretRef:
+            name: vulntrack-secrets
+```
+
+```bash Docker Secrets
+# Create secrets
+echo "postgresql://..." | docker secret create db_url -
+echo "secret-key" | docker secret create nextauth_secret -
+
+# Use in compose
+services:
+  app:
+    image: vulntrack:latest
+    secrets:
+      - db_url
+      - nextauth_secret
+    environment:
+      - DATABASE_URL_FILE=/run/secrets/db_url
+      - NEXTAUTH_SECRET_FILE=/run/secrets/nextauth_secret
+
+secrets:
+  db_url:
+    external: true
+  nextauth_secret:
+    external: true
+```
+</CodeGroup>
+
+### Secret Rotation
+
+Implement regular secret rotation:
+
+<Steps>
+  <Step title="Database password rotation">
+    1. Create new database user/password
+    2. Update application configuration
+    3. Deploy application update
+    4. Remove old database credentials
+  </Step>
+
+  <Step title="NEXTAUTH_SECRET rotation">
+    <Warning>
+      Rotating NEXTAUTH_SECRET will invalidate all active sessions.
+    </Warning>
+    
+    1. Schedule during maintenance window
+    2. Update secret in environment
+    3. Restart application
+    4. Notify users to re-authenticate
+  </Step>
+
+  <Step title="Automate rotation">
+    ```bash
+    # Example: Monthly rotation via cron
+    0 2 1 * * /scripts/rotate-secrets.sh
+    ```
+  </Step>
+</Steps>
+
+## HTTPS & Transport Security
+
+### TLS Configuration
+
+<Tip>
+  Terminate TLS at the load balancer or reverse proxy for optimal performance.
+</Tip>
+
+<CodeGroup>
+```nginx Nginx Configuration
+server {
+    listen 443 ssl http2;
+    server_name vulntrack.example.com;
+    
+    # TLS certificates
+    ssl_certificate /etc/ssl/certs/vulntrack.crt;
+    ssl_certificate_key /etc/ssl/private/vulntrack.key;
+    
+    # TLS configuration
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+    
+    # HSTS
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
+    
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "origin-when-cross-origin" always;
+    
+    # Proxy to application
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# Redirect HTTP to HTTPS
+server {
+    listen 80;
+    server_name vulntrack.example.com;
+    return 301 https://$server_name$request_uri;
+}
+```
+
+```yaml Traefik (Docker)
+labels:
+  - "traefik.enable=true"
+  - "traefik.http.routers.vulntrack.rule=Host(`vulntrack.example.com`)"
+  - "traefik.http.routers.vulntrack.entrypoints=websecure"
+  - "traefik.http.routers.vulntrack.tls=true"
+  - "traefik.http.routers.vulntrack.tls.certresolver=letsencrypt"
+  - "traefik.http.middlewares.security-headers.headers.stsSeconds=63072000"
+  - "traefik.http.middlewares.security-headers.headers.stsIncludeSubdomains=true"
+  - "traefik.http.routers.vulntrack.middlewares=security-headers"
+```
+</CodeGroup>
+
+### Security Headers
+
+VulnTrack includes security headers in `next.config.mjs`:
+
+```javascript
+async headers() {
+  return [
+    {
+      source: '/:path*',
+      headers: [
+        {
+          key: 'Strict-Transport-Security',
+          value: 'max-age=63072000; includeSubDomains; preload'
+        },
+        {
+          key: 'X-Frame-Options',
+          value: 'SAMEORIGIN' // Prevent clickjacking
+        },
+        {
+          key: 'X-Content-Type-Options',
+          value: 'nosniff' // Prevent MIME sniffing
+        },
+        {
+          key: 'Referrer-Policy',
+          value: 'origin-when-cross-origin'
+        },
+        {
+          key: 'Content-Security-Policy',
+          value: "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline';"
+        }
+      ]
+    }
+  ]
+}
+```
+
+<Warning>
+  Review and tighten the Content-Security-Policy for your deployment. Remove `'unsafe-eval'` and `'unsafe-inline'` if possible.
+</Warning>
+
+## Input Validation & Sanitization
+
+### Validation with Zod
+
+VulnTrack uses Zod for schema validation:
+
+```typescript src/lib/validations.ts
+import { z } from 'zod';
+
+export const vulnerabilitySchema = z.object({
+  title: z.string()
+    .min(1, 'Title is required')
+    .max(200, 'Title too long'),
+  description: z.string()
+    .min(10, 'Description must be at least 10 characters')
+    .max(10000, 'Description too long'),
+  severity: z.enum(['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'INFO']),
+  status: z.enum(['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED']),
+  cveId: z.string()
+    .regex(/^CVE-\d{4}-\d{4,}$/, 'Invalid CVE format')
+    .optional(),
+  cvssScore: z.number()
+    .min(0)
+    .max(10)
+    .optional()
+});
+
+// Validate input
+export async function createVulnerability(input: unknown) {
+  const validated = vulnerabilitySchema.parse(input);
+  // Proceed with validated data
+}
+```
+
+### SQL Injection Prevention
+
+Prisma automatically prevents SQL injection through parameterized queries:
+
+```typescript
+// Safe - Prisma parameterizes automatically
+const vulns = await prisma.vulnerability.findMany({
+  where: {
+    title: {
+      contains: userInput // Automatically escaped
+    }
+  }
+});
+
+// Dangerous - Never use raw queries with user input
+// ❌ DON'T DO THIS
+const vulns = await prisma.$queryRawUnsafe(
+  `SELECT * FROM Vulnerability WHERE title LIKE '%${userInput}%'`
+);
+
+// If raw queries are necessary, use parameterization
+const vulns = await prisma.$queryRaw`
+  SELECT * FROM "Vulnerability" WHERE title LIKE ${`%${userInput}%`}
+`;
+```
+
+### XSS Prevention
+
+Next.js and React automatically escape output:
+
+```typescript
+// Safe - React escapes automatically
+const VulnCard = ({ vulnerability }) => (
+  <div>
+    <h2>{vulnerability.title}</h2>
+    <p>{vulnerability.description}</p>
+  </div>
+);
+
+// Dangerous - Using dangerouslySetInnerHTML
+// Only use with sanitized content
+import DOMPurify from 'isomorphic-dompurify';
+
+const SafeHTML = ({ content }) => (
+  <div 
+    dangerouslySetInnerHTML={{ 
+      __html: DOMPurify.sanitize(content) 
+    }} 
+  />
+);
+```
+
+## Rate Limiting
+
+Implement rate limiting to prevent abuse:
+
+```typescript src/middleware.ts
+import { Ratelimit } from '@upstash/ratelimit';
+import { Redis } from '@upstash/redis';
+
+const ratelimit = new Ratelimit({
+  redis: Redis.fromEnv(),
+  limiter: Ratelimit.slidingWindow(10, '10 s'),
+  analytics: true,
+});
+
+export async function middleware(request: NextRequest) {
+  const ip = request.ip ?? '127.0.0.1';
+  const { success, limit, reset, remaining } = await ratelimit.limit(ip);
+
+  if (!success) {
+    return new Response('Rate limit exceeded', {
+      status: 429,
+      headers: {
+        'X-RateLimit-Limit': limit.toString(),
+        'X-RateLimit-Remaining': remaining.toString(),
+        'X-RateLimit-Reset': reset.toString(),
+      },
+    });
+  }
+
+  return NextResponse.next();
+}
+```
+
+<Tip>
+  Adjust rate limits based on endpoints:
+  - Login: 5 attempts per 15 minutes
+  - API endpoints: 100 requests per minute
+  - Vulnerability creation: 10 per minute
+</Tip>
+
+## Audit Logging
+
+VulnTrack includes an audit log system:
+
+```typescript src/lib/audit.ts
+import { prisma } from '@/lib/prisma';
+
+export async function createAuditLog({
+  action,
+  entityType,
+  entityId,
+  userId,
+  teamId,
+  details
+}: AuditLogInput) {
+  return await prisma.auditLog.create({
+    data: {
+      action, // CREATE, UPDATE, DELETE, LOGIN, etc.
+      entityType, // VULNERABILITY, USER, TEAM
+      entityId,
+      userId,
+      teamId,
+      details: JSON.stringify(details)
+    }
+  });
+}
+
+// Example usage
+await createAuditLog({
+  action: 'CREATE',
+  entityType: 'VULNERABILITY',
+  entityId: vuln.id,
+  userId: session.user.id,
+  teamId: session.user.teamId,
+  details: {
+    title: vuln.title,
+    severity: vuln.severity
+  }
+});
+```
+
+### Events to Log
+
+- Authentication events (login, logout, failed attempts)
+- Vulnerability operations (create, update, delete)
+- User management (creation, role changes, deletion)
+- Team operations (creation, user assignments)
+- Permission changes
+- Data exports
+- Configuration changes
+
+## Security Checklist
+
+<Steps>
+  <Step title="Authentication & Authorization">
+    - [ ] Strong NEXTAUTH_SECRET configured
+    - [ ] Session timeouts configured appropriately
+    - [ ] Password policy enforced (12+ characters, complexity)
+    - [ ] RBAC implemented and tested
+    - [ ] Team isolation verified
+  </Step>
+
+  <Step title="Database Security">
+    - [ ] SSL/TLS enabled for database connections
+    - [ ] Database user permissions minimized
+    - [ ] Connection pooling configured
+    - [ ] Database in private network
+    - [ ] Encryption at rest enabled
+    - [ ] Regular backups configured
+  </Step>
+
+  <Step title="Transport Security">
+    - [ ] HTTPS enforced (no HTTP access)
+    - [ ] TLS 1.2+ only
+    - [ ] HSTS header configured
+    - [ ] Security headers implemented
+    - [ ] CSP policy reviewed and tightened
+  </Step>
+
+  <Step title="Application Security">
+    - [ ] Input validation on all endpoints
+    - [ ] Output encoding/escaping in place
+    - [ ] Rate limiting implemented
+    - [ ] Audit logging enabled
+    - [ ] Error messages don't leak sensitive info
+    - [ ] Dependencies regularly updated
+  </Step>
+
+  <Step title="Infrastructure Security">
+    - [ ] Secrets managed securely (not in .env files)
+    - [ ] Firewall rules configured
+    - [ ] Monitoring and alerting set up
+    - [ ] Regular security updates
+    - [ ] Backup and recovery tested
+  </Step>
+</Steps>
+
+## Security Monitoring
+
+### Failed Authentication Tracking
+
+```typescript
+// Track failed login attempts
+const failedAttempts = await prisma.auditLog.count({
+  where: {
+    action: 'LOGIN_FAILED',
+    userId: user.id,
+    createdAt: {
+      gte: new Date(Date.now() - 15 * 60 * 1000) // Last 15 minutes
+    }
+  }
+});
+
+if (failedAttempts >= 5) {
+  // Lock account or require additional verification
+  await lockUserAccount(user.id);
+}
+```
+
+### Security Alerts
+
+Set up alerts for:
+- Multiple failed login attempts
+- Unusual data access patterns
+- Privilege escalation attempts
+- Database connection failures
+- High error rates
+- Unauthorized API access
+
+## Compliance Considerations
+
+<AccordionGroup>
+  <Accordion title="GDPR Compliance">
+    - Implement data export functionality
+    - Add user deletion (right to be forgotten)
+    - Maintain audit logs
+    - Include privacy policy and consent
+    - Encrypt personal data
+  </Accordion>
+
+  <Accordion title="SOC 2 Compliance">
+    - Enable comprehensive audit logging
+    - Implement access controls
+    - Regular security assessments
+    - Incident response procedures
+    - Data encryption in transit and at rest
+  </Accordion>
+
+  <Accordion title="ISO 27001">
+    - Document security policies
+    - Regular risk assessments
+    - Security awareness training
+    - Business continuity planning
+    - Regular security audits
+  </Accordion>
+</AccordionGroup>
+
+## Incident Response
+
+### Security Incident Playbook
+
+<Steps>
+  <Step title="Detection">
+    Monitor for security events through:
+    - Application logs
+    - Database audit logs
+    - System monitoring tools
+    - User reports
+  </Step>
+
+  <Step title="Containment">
+    Immediate actions:
+    - Isolate affected systems
+    - Revoke compromised credentials
+    - Enable additional logging
+    - Preserve evidence
+  </Step>
+
+  <Step title="Investigation">
+    - Review audit logs
+    - Identify attack vector
+    - Determine scope of breach
+    - Document findings
+  </Step>
+
+  <Step title="Recovery">
+    - Patch vulnerabilities
+    - Restore from clean backups if needed
+    - Reset compromised credentials
+    - Update security controls
+  </Step>
+
+  <Step title="Post-Incident">
+    - Document incident
+    - Update security procedures
+    - Notify affected parties if required
+    - Conduct lessons learned review
+  </Step>
+</Steps>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Production Deployment" icon="server" href="/deployment/production">
+    Deploy with security best practices
+  </Card>
+  <Card title="Docker Security" icon="docker" href="/deployment/docker">
+    Secure containerized deployments
+  </Card>
+</CardGroup>

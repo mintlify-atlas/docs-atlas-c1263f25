@@ -1,0 +1,405 @@
+---
+title: Frequently Asked Questions
+description: Common questions about VulnTrack setup, features, and usage
+---
+
+Find answers to frequently asked questions about VulnTrack.
+
+## Getting Started
+
+<AccordionGroup>
+  <Accordion title="What are the system requirements for VulnTrack?">
+    **Minimum Requirements:**
+    - Node.js 18.x or later
+    - PostgreSQL 12 or later
+    - 2GB RAM
+    - 10GB disk space
+    
+    **Recommended:**
+    - Node.js 20.x
+    - PostgreSQL 15 or later
+    - 4GB RAM
+    - 50GB disk space for larger vulnerability databases
+    
+    VulnTrack runs on Linux, macOS, and Windows with WSL2.
+  </Accordion>
+
+  <Accordion title="How do I create the first admin user?">
+    The first user registered in VulnTrack automatically becomes the System Administrator. Alternatively, you can create the initial admin using the database seed script:
+    
+    ```bash
+    npx prisma db seed
+    ```
+    
+    This creates a default admin account. Change the password immediately after first login.
+  </Accordion>
+
+  <Accordion title="Can I migrate data from another vulnerability management tool?">
+    VulnTrack supports CSV import for bulk vulnerability data. You'll need to:
+    
+    1. Export data from your current tool
+    2. Map columns to VulnTrack's data format
+    3. Import via the Admin panel or API
+    
+    For large migrations or custom integrations, consider using the VulnTrack API or contact the community for migration scripts.
+  </Accordion>
+
+  <Accordion title="Is VulnTrack suitable for small teams?">
+    Yes! VulnTrack scales from individual security professionals to large enterprise teams. The team-based workspace model allows you to start small and grow as needed.
+  </Accordion>
+
+  <Accordion title="What databases are supported?">
+    VulnTrack currently supports PostgreSQL as the primary database. PostgreSQL is recommended for its reliability, performance, and advanced features.
+    
+    Support for other databases may be added in future releases.
+  </Accordion>
+</AccordionGroup>
+
+## Scoring Frameworks
+
+<AccordionGroup>
+  <Accordion title="Which scoring framework should I use?">
+    It depends on your use case:
+    
+    - **CVSS**: External reporting, compliance, vendor communication
+    - **DREAD**: Internal triage, custom applications, organizational context
+    - **STRIDE**: Threat modeling, design reviews, attack surface analysis
+    - **OWASP Top 10**: Web application security, training, compliance
+    
+    VulnTrack allows you to use multiple frameworks simultaneously for comprehensive risk assessment.
+  </Accordion>
+
+  <Accordion title="Can I override CVSS scores from CVE imports?">
+    Yes. VulnTrack imports CVSS Base scores from NIST NVD, but you can adjust these using Environmental metrics to reflect your organization's specific context:
+    
+    - Modified Base metrics
+    - Confidentiality/Integrity/Availability requirements
+    - Custom severity overrides
+    
+    All overrides are tracked with audit history.
+  </Accordion>
+
+  <Accordion title="How is DREAD scoring calculated?">
+    DREAD uses five components, each scored 0-10:
+    
+    1. **Damage** (0-10)
+    2. **Reproducibility** (0-10)
+    3. **Exploitability** (0-10)
+    4. **Affected Users** (0-10)
+    5. **Discoverability** (0-10)
+    
+    The total score (0-50) is normalized for comparison with other frameworks. VulnTrack provides guided scoring with examples for each component.
+  </Accordion>
+
+  <Accordion title="Can I create custom scoring frameworks?">
+    Currently, VulnTrack supports DREAD, CVSS, STRIDE, and OWASP Top 10 mappings. Custom scoring frameworks are a planned feature for future releases.
+    
+    You can use custom fields and tags to implement organization-specific risk factors alongside the built-in frameworks.
+  </Accordion>
+
+  <Accordion title="What's the difference between DREAD and CVSS?">
+    **DREAD:**
+    - Designed for internal risk assessment
+    - Flexible and context-aware
+    - Best for custom applications
+    - Not standardized across industry
+    
+    **CVSS:**
+    - Industry-standard framework
+    - Objective and consistent
+    - Required for compliance
+    - Better for external communication
+    
+    See the VulnTrack Research blog for detailed "DREAD vs CVSS Strategy Guides."
+  </Accordion>
+</AccordionGroup>
+
+## Team Management
+
+<AccordionGroup>
+  <Accordion title="How does the invitation system work?">
+    VulnTrack uses a secure invitation-only registration system:
+    
+    1. Admin generates single-use invitation link from Settings panel
+    2. Link is sent to new user via secure channel
+    3. User registers using the invitation link
+    4. Admin assigns role (Admin, Analyst, or Viewer)
+    
+    Invitation links expire after 7 days or after being used once.
+  </Accordion>
+
+  <Accordion title="What's the difference between roles?">
+    **Admin:**
+    - Full system access
+    - User and team management
+    - System configuration
+    - All workspaces
+    
+    **Analyst:**
+    - Create/edit vulnerabilities
+    - Assign tasks
+    - Generate reports
+    - Assigned workspaces only
+    
+    **Viewer:**
+    - Read-only access
+    - View dashboards
+    - Comment on issues
+    - Assigned workspaces only
+  </Accordion>
+
+  <Accordion title="Can I have different permissions for different workspaces?">
+    Yes. VulnTrack's team-based workspaces allow granular access control. A user can be:
+    
+    - Admin in Workspace A
+    - Analyst in Workspace B
+    - Viewer in Workspace C
+    - No access to Workspace D
+    
+    Configure workspace permissions in the Admin panel.
+  </Accordion>
+
+  <Accordion title="How many users can VulnTrack support?">
+    VulnTrack is designed to scale. The number of users depends on your infrastructure:
+    
+    - **Small teams**: 5-10 users (single server)
+    - **Medium teams**: 10-50 users (optimized database)
+    - **Large teams**: 50+ users (load-balanced deployment)
+    
+    There is no artificial user limit in the software.
+  </Accordion>
+
+  <Accordion title="Can external collaborators access VulnTrack?">
+    Yes. You can invite external collaborators (consultants, auditors, bug bounty researchers) with appropriate permissions:
+    
+    - Create dedicated workspace for external collaboration
+    - Assign Viewer or Analyst role as needed
+    - Restrict access to specific vulnerabilities
+    - Revoke access when engagement ends
+  </Accordion>
+</AccordionGroup>
+
+## Features & Functionality
+
+<AccordionGroup>
+  <Accordion title="How does the CVE import engine work?">
+    VulnTrack's CVE Import Engine automatically fetches vulnerability data:
+    
+    1. Configure data source (NIST NVD or VulnCheck)
+    2. Set filters for relevant CVEs (keywords, vendors, products)
+    3. Schedule automatic imports (daily, weekly, or manual)
+    4. Review imported CVEs for applicability
+    5. Customize with organizational context
+    
+    All imported CVEs include CVSS scores and reference links.
+  </Accordion>
+
+  <Accordion title="Can I export vulnerability data?">
+    Yes. VulnTrack provides multiple export options:
+    
+    - **PDF Reports**: Executive-ready formatted reports
+    - **CSV Export**: Data for spreadsheet analysis
+    - **API Access**: Programmatic integration with other tools
+    - **JSON Export**: Full data structure for backups
+    
+    Access exports from the Reports section.
+  </Accordion>
+
+  <Accordion title="What is VulnTrack Research?">
+    VulnTrack Research is a built-in professional-grade blog system with deep technical guides:
+    
+    - **OWASP Top 10 2024 Analysis**
+    - **DREAD vs CVSS Strategy Guides**
+    - **Threat Modeling Best Practices**
+    - **Vulnerability Case Studies**
+    
+    Content is written in MDX format with engineering-grade typography and code examples.
+  </Accordion>
+
+  <Accordion title="Does VulnTrack integrate with scanning tools?">
+    VulnTrack focuses on vulnerability management and risk assessment rather than automated scanning. However, you can:
+    
+    - Import scan results via CSV
+    - Use the API to push findings from scanners
+    - Integrate with CI/CD pipelines
+    - Build custom integrations using the REST API
+    
+    Community-contributed integrations may be available for popular scanners.
+  </Accordion>
+
+  <Accordion title="Is there an API?">
+    Yes. VulnTrack provides a RESTful API for:
+    
+    - Creating and updating vulnerabilities
+    - Querying vulnerability data
+    - Managing teams and users (admin only)
+    - Generating reports
+    - Webhook integrations
+    
+    API documentation is available in the Settings panel.
+  </Accordion>
+
+  <Accordion title="Can I customize the dashboard?">
+    VulnTrack provides configurable dashboard widgets:
+    
+    - Vulnerability by severity
+    - Remediation timeline
+    - CVSS score distribution
+    - Team workload
+    - Recent activity
+    
+    Arrange widgets based on your preferences. Advanced customization requires code modifications.
+  </Accordion>
+
+  <Accordion title="Does VulnTrack support dark mode?">
+    Yes! VulnTrack is "dark-mode first" with a professional aesthetic designed for long operational sessions. You can toggle between light and dark themes in user preferences.
+  </Accordion>
+</AccordionGroup>
+
+## Security & Privacy
+
+<AccordionGroup>
+  <Accordion title="How is data secured in VulnTrack?">
+    VulnTrack implements security best practices:
+    
+    - **Authentication**: NextAuth.js with bcrypt password hashing
+    - **Authorization**: Role-based access control (RBAC)
+    - **Database**: Encrypted connections, prepared statements
+    - **Session Management**: Secure cookie handling
+    - **Audit Logging**: All actions tracked with timestamps
+    
+    For production deployments, use HTTPS and secure environment variables.
+  </Accordion>
+
+  <Accordion title="Is VulnTrack cloud-hosted or self-hosted?">
+    VulnTrack is **self-hosted** by design for maximum data privacy and control. You own and control all vulnerability data.
+    
+    Deploy on:
+    - On-premises servers
+    - Private cloud (AWS, Azure, GCP)
+    - Containerized environments (Docker, Kubernetes)
+    
+    This ensures sensitive vulnerability information remains within your security perimeter.
+  </Accordion>
+
+  <Accordion title="What data does VulnTrack collect?">
+    VulnTrack is privacy-focused and collects only the data you input:
+    
+    - Vulnerability information you create or import
+    - User accounts and authentication data
+    - Audit logs of system actions
+    
+    **No telemetry or analytics data is sent externally.** All data stays on your infrastructure.
+  </Accordion>
+
+  <Accordion title="Can I run VulnTrack in an air-gapped environment?">
+    Yes. VulnTrack can operate in air-gapped environments with limited functionality:
+    
+    - Core vulnerability management works offline
+    - CVE import requires connectivity (can be proxied)
+    - Manual vulnerability entry fully supported
+    - All data remains local
+    
+    For CVE data, export from connected system and import manually.
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Database connection errors">
+    Check your `DATABASE_URL` in the `.env` file:
+    
+    ```env
+    DATABASE_URL="postgresql://user:password@localhost:5432/vulntrack"
+    ```
+    
+    Common issues:
+    - PostgreSQL service not running
+    - Incorrect credentials
+    - Firewall blocking port 5432
+    - Database does not exist (run `npx prisma db push`)
+  </Accordion>
+
+  <Accordion title="Authentication errors">
+    Ensure `NEXTAUTH_SECRET` is set in `.env`:
+    
+    ```bash
+    NEXTAUTH_SECRET=$(openssl rand -base64 32)
+    ```
+    
+    Also verify:
+    - `NEXTAUTH_URL` matches your deployment URL
+    - Cookies are enabled in browser
+    - No conflicting sessions from previous deployments
+  </Accordion>
+
+  <Accordion title="CVE import not working">
+    Verify:
+    - Internet connectivity to NIST NVD API
+    - No rate limiting (wait and retry)
+    - API credentials configured (if using VulnCheck)
+    - Correct date format in import filters
+    
+    Check application logs for detailed error messages.
+  </Accordion>
+
+  <Accordion title="Performance issues with large databases">
+    Optimize performance:
+    - Run `VACUUM ANALYZE` on PostgreSQL
+    - Add database indexes (Prisma handles this automatically)
+    - Archive old vulnerabilities
+    - Increase database connection pool size
+    - Consider upgrading hardware resources
+  </Accordion>
+
+  <Accordion title="Where can I find logs?">
+    VulnTrack logs are available in:
+    
+    - **Application logs**: `stdout` (console or PM2/systemd logs)
+    - **Database logs**: PostgreSQL log directory
+    - **Audit logs**: Available in VulnTrack Admin panel
+    
+    For production deployments, configure log aggregation (e.g., ELK stack).
+  </Accordion>
+</AccordionGroup>
+
+## Contributing & Support
+
+<AccordionGroup>
+  <Accordion title="How can I contribute to VulnTrack?">
+    VulnTrack is open source (MIT License). Contributions are welcome:
+    
+    - Report bugs on GitHub Issues
+    - Submit pull requests with fixes or features
+    - Improve documentation
+    - Share integrations and scripts
+    
+    See the [Contributing Guide](/resources/contributing) for details.
+  </Accordion>
+
+  <Accordion title="Where can I get help?">
+    Support resources:
+    
+    - **Documentation**: This docs site
+    - **GitHub Issues**: Bug reports and feature requests
+    - **GitHub Discussions**: Community help and questions
+    - **VulnTrack Research**: Technical guides and best practices
+    
+    See the [Support](/resources/support) page for all available channels.
+  </Accordion>
+
+  <Accordion title="Is there a roadmap for future features?">
+    Check the GitHub repository for:
+    
+    - Open issues with enhancement labels
+    - Milestones for upcoming releases
+    - Community discussion of feature requests
+    
+    Feature priorities are driven by community feedback and contributions.
+  </Accordion>
+</AccordionGroup>
+
+<Info>
+Can't find your question? Check the [Support](/resources/support) page for additional help resources.
+</Info>

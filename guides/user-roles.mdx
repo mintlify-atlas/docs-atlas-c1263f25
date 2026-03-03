@@ -1,0 +1,468 @@
+---
+title: User Roles and Permissions
+description: Complete guide to VulnTrack's RBAC system with ADMIN, ANALYST, and VIEWER roles
+---
+
+VulnTrack implements a Role-Based Access Control (RBAC) system with three distinct roles. This guide explains each role's permissions, use cases, and how to manage role assignments.
+
+## Overview of Roles
+
+VulnTrack has three roles, each with specific permissions:
+
+| Role | Access Level | Primary Use Case |
+|------|-------------|------------------|
+| **ADMIN** | Full access | Team administrators, security managers |
+| **ANALYST** | Create & edit | Security analysts, developers, engineers |
+| **VIEWER** | Read-only | Stakeholders, executives, auditors |
+
+### Role in User Model
+
+```prisma
+model User {
+  id            String    @id @default(uuid())
+  name          String?
+  email         String?   @unique
+  role          String    @default("VIEWER") // ADMIN, ANALYST, VIEWER
+  status        String    @default("ACTIVE") // ACTIVE, INACTIVE, PENDING
+  teamId        String?
+  team          Team?     @relation(fields: [teamId], references: [id])
+  // ... other fields
+}
+```
+
+## ADMIN Role
+
+Administrators have complete control over their team's workspace.
+
+### Permissions
+
+#### Vulnerability Management
+- ✅ Create vulnerabilities (auto-approved)
+- ✅ Edit any vulnerability in the team
+- ✅ Delete any vulnerability
+- ✅ Approve pending vulnerabilities from analysts
+- ✅ Assign vulnerabilities to team members
+- ✅ View all vulnerabilities, regardless of approval status
+
+```typescript
+// From vulnerabilities.ts:156
+const approvalStatus = user.role === 'ADMIN' ? 'APPROVED' : 'PENDING'
+```
+
+#### User Management
+- ✅ Invite new users to the team
+- ✅ Create users directly
+- ✅ Update user roles
+- ✅ Activate/deactivate users
+- ✅ Delete users
+- ✅ Revoke pending invitations
+
+```typescript
+// From admin.ts:10-16
+async function checkAdmin() {
+  const session = await getServerSession(authOptions)
+  if (session?.user?.role !== "ADMIN") {
+    throw new Error("Unauthorized: Admin access required")
+  }
+  return session
+}
+```
+
+#### Reports and Analytics
+- ✅ Generate all report types (Executive, Technical, Compliance, Custom)
+- ✅ Export in all formats (PDF, CSV, HTML)
+- ✅ View team-wide statistics
+- ✅ Access audit logs
+
+#### Team Settings
+- ✅ Update team name and settings
+- ✅ Manage team configuration
+- ✅ Run workspace consolidation
+
+### Use Cases
+
+<Tip>
+  **Who Should Be Admin:**
+  - Security team leads
+  - CISO or security director
+  - IT managers responsible for vulnerability tracking
+  - Users who need to onboard and manage team members
+</Tip>
+
+### Admin-Only Features
+
+These features are exclusively available to admins:
+
+1. **Admin Dashboard**: `/dashboard/admin/*`
+2. **User Management Panel**: Create, edit, delete users
+3. **Invitation System**: Send and revoke invitations
+4. **Vulnerability Assignment**: Assign/unassign team members
+5. **Vulnerability Approval**: Approve or reject pending items
+
+## ANALYST Role
+
+Analysts are the primary users who identify, document, and manage vulnerabilities.
+
+### Permissions
+
+#### Vulnerability Management
+- ✅ Create vulnerabilities (requires admin approval)
+- ✅ Edit their own vulnerabilities
+- ✅ View approved vulnerabilities from the team
+- ✅ View their own pending vulnerabilities
+- ✅ Update status on vulnerabilities assigned to them
+- ✅ Add comments to vulnerabilities
+- ✅ Import CVEs from NVD
+- ❌ Cannot edit vulnerabilities created by others
+- ❌ Cannot delete vulnerabilities
+- ❌ Cannot approve vulnerabilities
+
+```typescript
+// From vulnerabilities.ts:37-50
+if (user.role !== 'ADMIN') {
+  // Non-Admins see APPROVED items OR their own items
+  whereClause = {
+    teamId: teamId,
+    OR: [
+      { approvalStatus: "APPROVED" },
+      { userId: session.user.id }
+    ]
+  }
+}
+```
+
+#### User Management
+- ✅ View team members (for assignment context)
+- ❌ Cannot create or edit users
+- ❌ Cannot change roles
+- ❌ Cannot send invitations
+
+#### Reports and Analytics
+- ✅ Generate reports from accessible vulnerabilities
+- ✅ Export in all formats
+- ✅ View personal statistics
+- ❌ Cannot access full audit logs
+
+#### Comments and Collaboration
+- ✅ Add comments to any approved vulnerability
+- ✅ Participate in discussions
+- ✅ Receive assignment notifications
+
+### Use Cases
+
+<Tip>
+  **Who Should Be Analyst:**
+  - Security analysts and researchers
+  - Penetration testers
+  - Security engineers
+  - Developers with security responsibilities
+  - Anyone who actively identifies and documents vulnerabilities
+</Tip>
+
+### Approval Workflow for Analysts
+
+When an analyst creates a vulnerability:
+
+<Steps>
+  <Step title="Create Vulnerability">
+    Analyst fills out the vulnerability form and submits.
+  </Step>
+  
+  <Step title="Pending Status">
+    Vulnerability is created with `approvalStatus: "PENDING"`.
+  </Step>
+  
+  <Step title="Limited Visibility">
+    Only the analyst and admins can see the vulnerability.
+  </Step>
+  
+  <Step title="Admin Review">
+    An admin reviews and clicks **Approve Vulnerability**.
+  </Step>
+  
+  <Step title="Team-Wide Access">
+    Once approved, all team members can view the vulnerability.
+  </Step>
+</Steps>
+
+```typescript
+// From vulnerabilities.ts:301-340
+export async function approveVulnerability(id: string) {
+  const session = await getServerSession(authOptions)
+  
+  if (!session?.user?.id || session.user.role !== 'ADMIN') {
+    return { success: false, error: "Unauthorized" }
+  }
+  
+  const vulnerability = await prisma.vulnerability.update({
+    where: { id },
+    data: { approvalStatus: 'APPROVED' }
+  })
+  
+  await logAudit("APPROVE_VULNERABILITY", "Vulnerability", id, `Approved vulnerability: ${vulnerability.title}`)
+}
+```
+
+## VIEWER Role
+
+Viewers have read-only access to approved vulnerabilities and reports.
+
+### Permissions
+
+#### Vulnerability Management
+- ✅ View approved vulnerabilities
+- ✅ View vulnerability details
+- ✅ Read comments
+- ❌ Cannot create vulnerabilities
+- ❌ Cannot edit vulnerabilities
+- ❌ Cannot delete vulnerabilities
+- ❌ Cannot change status
+- ❌ Cannot add comments
+- ❌ Cannot see pending vulnerabilities (even their own)
+
+#### User Management
+- ✅ View team members list
+- ❌ Cannot manage users
+- ❌ Cannot send invitations
+
+#### Reports and Analytics
+- ✅ Generate reports from approved vulnerabilities
+- ✅ Export in all formats
+- ✅ View team statistics
+- ❌ Cannot access audit logs
+
+### Use Cases
+
+<Tip>
+  **Who Should Be Viewer:**
+  - C-level executives (CEO, CTO, CISO)
+  - Board members
+  - Compliance officers
+  - External auditors (with appropriate NDAs)
+  - Project managers
+  - Stakeholders who need visibility without edit access
+</Tip>
+
+### Viewer Experience
+
+Viewers see a simplified interface:
+- **Dashboard**: High-level metrics and statistics
+- **Vulnerabilities**: List of approved vulnerabilities only
+- **Reports**: Generate and download reports
+- **No Admin Menu**: No access to user management or settings
+
+## Changing User Roles
+
+Only admins can modify user roles.
+
+### Via User Management Interface
+
+<Steps>
+  <Step title="Navigate to Admin > Users">
+    Open the user management panel.
+  </Step>
+  
+  <Step title="Find Target User">
+    Locate the user in the table.
+  </Step>
+  
+  <Step title="Click Edit or Role Dropdown">
+    Select the new role from the dropdown or edit dialog.
+  </Step>
+  
+  <Step title="Save Changes">
+    Role is updated immediately and logged in the audit trail.
+  </Step>
+</Steps>
+
+### Programmatic Role Update
+
+```typescript
+// From admin.ts:155-176
+export async function updateUserRole(userId: string, role: string) {
+  const session = await checkAdmin()
+  
+  // Verify same team
+  const admin = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { teamId: true }
+  })
+  const targetUser = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { teamId: true }
+  })
+  
+  if (!admin?.teamId || !targetUser || admin.teamId !== targetUser.teamId) {
+    return { success: false, error: "Unauthorized access to user" }
+  }
+  
+  await prisma.user.update({ where: { id: userId }, data: { role } })
+  await logAudit("UPDATE_ROLE", "User", userId, `Role updated to ${role}`)
+}
+```
+
+<Warning>
+  **Team Isolation**: Admins can only change roles for users in **their own team**. Cross-team role modifications are blocked for security.
+</Warning>
+
+## Role Assignment on Invitation
+
+When inviting a new user, admins specify the role:
+
+```typescript
+// From admin.ts:269-278
+const invitation = await prisma.invitation.create({
+  data: {
+    email,
+    token,
+    role, // ADMIN, ANALYST, or VIEWER
+    teamId: inviter?.teamId,
+    expiresAt,
+    inviterId: session.user.id
+  }
+})
+```
+
+The role is applied when the user accepts the invitation and completes registration.
+
+## Permission Checking Patterns
+
+VulnTrack implements several patterns for authorization:
+
+### Session-Based Checks
+
+```typescript
+const session = await getServerSession(authOptions)
+
+if (!session?.user?.id) {
+  return { success: false, error: "Unauthorized" }
+}
+
+if (session.user.role !== 'ADMIN') {
+  return { success: false, error: "Admin access required" }
+}
+```
+
+### Team-Scoped Queries
+
+```typescript
+const user = await prisma.user.findUnique({
+  where: { id: session.user.id },
+  select: { teamId: true, role: true }
+})
+
+const vulnerabilities = await prisma.vulnerability.findMany({
+  where: {
+    teamId: user.teamId,
+    OR: [
+      { approvalStatus: "APPROVED" },
+      { userId: session.user.id } // Own items
+    ]
+  }
+})
+```
+
+### Ownership Verification
+
+```typescript
+const existing = await prisma.vulnerability.findUnique({
+  where: { id, userId: session.user.id }
+})
+
+if (!existing && user?.role !== 'ADMIN') {
+  return { success: false, error: "Unauthorized" }
+}
+```
+
+## Best Practices
+
+<Tip>
+  **Principle of Least Privilege**: Assign the minimum role necessary:
+  - Start new users as VIEWER
+  - Promote to ANALYST when they need to create vulnerabilities
+  - Reserve ADMIN for team leads and managers
+</Tip>
+
+<Tip>
+  **Multiple Admins**: Have at least 2-3 admins per team to ensure:
+  - Continuity if one admin is unavailable
+  - Peer review of sensitive actions
+  - Backup access for critical operations
+</Tip>
+
+<Tip>
+  **Regular Role Audits**: Quarterly review of user roles:
+  - Remove or downgrade users who change positions
+  - Upgrade users who take on security responsibilities
+  - Deactivate accounts for departed team members
+</Tip>
+
+<Tip>
+  **Role Documentation**: Document your team's role assignment criteria:
+  - Who qualifies for each role
+  - Approval process for role upgrades
+  - Review cadence for role assignments
+</Tip>
+
+## Comparison Table
+
+| Feature | ADMIN | ANALYST | VIEWER |
+|---------|-------|---------|--------|
+| View approved vulnerabilities | ✅ | ✅ | ✅ |
+| View pending vulnerabilities (own) | ✅ | ✅ | ❌ |
+| View pending vulnerabilities (all) | ✅ | ❌ | ❌ |
+| Create vulnerabilities | ✅ (auto-approved) | ✅ (requires approval) | ❌ |
+| Edit own vulnerabilities | ✅ | ✅ | ❌ |
+| Edit team vulnerabilities | ✅ | ❌ | ❌ |
+| Delete vulnerabilities | ✅ | ❌ | ❌ |
+| Approve vulnerabilities | ✅ | ❌ | ❌ |
+| Assign vulnerabilities | ✅ | ❌ | ❌ |
+| Change vulnerability status | ✅ | ✅ (assigned only) | ❌ |
+| Add comments | ✅ | ✅ | ❌ |
+| View comments | ✅ | ✅ | ✅ |
+| Import CVEs | ✅ | ✅ | ❌ |
+| Generate reports | ✅ | ✅ | ✅ |
+| Invite users | ✅ | ❌ | ❌ |
+| Manage users | ✅ | ❌ | ❌ |
+| Change roles | ✅ | ❌ | ❌ |
+| View audit logs | ✅ | Partial | ❌ |
+| Access admin panel | ✅ | ❌ | ❌ |
+
+## Troubleshooting
+
+### "Unauthorized" Errors
+
+**Problem**: User gets unauthorized errors when trying to perform actions.
+
+**Solutions**:
+- Verify user's role with `SELECT role FROM User WHERE id = ?`
+- Check that user is in the correct team
+- Ensure session hasn't expired (log out and back in)
+- Confirm the action is permitted for their role
+
+### Cannot See Team Vulnerabilities
+
+**Problem**: User sees empty vulnerability list despite team having data.
+
+**Solutions**:
+- **Viewer**: Can only see APPROVED vulnerabilities
+- **Analyst**: Can see approved + own pending items
+- Verify vulnerabilities have been approved by admin
+- Check team assignment is correct
+
+### Role Change Doesn't Take Effect
+
+**Problem**: User's role is updated but permissions don't change.
+
+**Solutions**:
+- User must log out and back in to refresh session
+- Clear browser cache and cookies
+- Check database to confirm role was actually updated
+- Verify no middleware or caching is interfering
+
+## Next Steps
+
+- Set up [Team Management](/guides/team-management) to invite users with roles
+- Learn about [Assigning Vulnerabilities](/guides/assigning-tasks) (admin feature)
+- Configure [Audit Logging](/features/team-collaboration#audit-trail) to track role changes
+- Review [Security Best Practices](/resources/best-practices) for role management

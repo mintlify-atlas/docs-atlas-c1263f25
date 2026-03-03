@@ -1,0 +1,160 @@
+---
+title: Introduction to VulnTrack
+description: Modern, privacy-focused vulnerability management platform with unified risk scoring (DREAD, STRIDE, CVSS) and team collaboration
+---
+
+## Welcome to VulnTrack
+
+VulnTrack is an **open-source vulnerability management platform** designed for security teams who value precision and improved workflows. Unlike traditional CVE trackers, VulnTrack integrates multiple risk scoring frameworks into a unified remediation workflow, empowering teams to make data-driven security decisions.
+
+<CardGroup cols={2}>
+  <Card
+    title="Quick Start"
+    icon="rocket"
+    href="/quickstart"
+  >
+    Get up and running in minutes with your first vulnerability entry and risk assessment
+  </Card>
+  <Card
+    title="Installation Guide"
+    icon="server"
+    href="/installation"
+  >
+    Complete setup instructions for local development and production deployment
+  </Card>
+  <Card
+    title="API Reference"
+    icon="code"
+    href="/api/overview"
+  >
+    Explore server actions and data models for custom integrations
+  </Card>
+  <Card
+    title="Deployment Guide"
+    icon="docker"
+    href="/deployment/docker"
+  >
+    Deploy VulnTrack with Docker or in production environments
+  </Card>
+</CardGroup>
+
+## Why VulnTrack?
+
+VulnTrack addresses the limitations of scattered vulnerability tracking tools by providing a comprehensive platform that combines:
+
+### Unified Risk Scoring
+
+Make informed remediation decisions with multiple risk assessment frameworks:
+
+- **DREAD** - Quantitative internal triage scoring across 5 dimensions (Damage, Reproducibility, Exploitability, Affected Users, Discoverability)
+- **STRIDE** - Threat modeling classification (Spoofing, Tampering, Repudiation, Information Disclosure, Denial of Service, Elevation of Privilege)  
+- **CVSS v3.1** - Industry-standard scoring for external compliance and reporting
+
+<Tip>
+VulnTrack automatically calculates DREAD scores from CVSS metrics when importing CVEs, giving you instant risk context.
+</Tip>
+
+### Automated CVE Import
+
+Seamlessly fetch vulnerability data from multiple sources:
+
+- **VulnCheck API** - Primary source with real-time updates
+- **NIST NVD** - Fallback to official National Vulnerability Database
+- **KEV Detection** - Automatic flagging of Known Exploited Vulnerabilities
+- **Auto-populated fields** - CVE descriptions, CVSS scores, affected systems, and references
+
+### Team Collaboration
+
+Built for security teams with multi-user workflows:
+
+- **Team-based workspaces** with strict data isolation
+- **Role-based access control** (Admin, Analyst, Viewer)
+- **Invitation-only registration** for controlled access
+- **Assignment system** with email notifications
+- **Approval workflow** for vulnerability submissions
+- **Collaborative commenting** on vulnerability entries
+
+### Reporting & Compliance
+
+Generate professional reports for stakeholders:
+
+- **PDF exports** with executive summaries
+- **CSV exports** for data analysis
+- **Audit logging** for compliance tracking
+- **Activity timelines** for each vulnerability
+
+### Developer Experience
+
+Modern stack optimized for extensibility:
+
+- **Next.js 14** with App Router and Server Actions
+- **TypeScript** for type safety
+- **PostgreSQL** with Prisma ORM
+- **Dark-mode first UI** built with Radix UI and Tailwind CSS
+- **Professional blog system** (VulnTrack Research) with MDX support
+
+## Key Features at a Glance
+
+<AccordionGroup>
+  <Accordion title="Vulnerability Management" icon="shield-halved">
+    - Create, update, and track vulnerabilities
+    - Import CVEs automatically from NIST/VulnCheck
+    - Assign vulnerabilities to team members
+    - Status tracking (Open, In Progress, Remediated, Accepted)
+    - Rich metadata including affected systems, mitigations, and references
+  </Accordion>
+
+  <Accordion title="Risk Scoring" icon="calculator">
+    - DREAD calculator with interactive sliders
+    - STRIDE threat classification checkboxes
+    - Automatic CVSS v3.1 import from CVE databases
+    - Visual risk indicators and severity badges
+  </Accordion>
+
+  <Accordion title="Team Features" icon="users">
+    - Multi-tenant architecture with team isolation
+    - Invitation-based user management
+    - Role-based permissions (Admin, Analyst, Viewer)
+    - Real-time notifications for assignments and updates
+    - Comment threads on vulnerabilities
+  </Accordion>
+
+  <Accordion title="Security & Compliance" icon="lock">
+    - Approval workflow for vulnerability submissions
+    - Comprehensive audit logging
+    - Secure authentication with NextAuth.js
+    - Data isolation between teams
+    - Password recovery system
+  </Accordion>
+</AccordionGroup>
+
+## What You'll Build With VulnTrack
+
+Whether you're managing vulnerabilities for a small team or an enterprise, VulnTrack scales to your needs:
+
+<CardGroup cols={3}>
+  <Card title="Security Teams" icon="shield">
+    Centralized vulnerability tracking with team collaboration
+  </Card>
+  <Card title="Compliance Officers" icon="clipboard-check">
+    Audit trails and executive reports for regulatory requirements
+  </Card>
+  <Card title="Penetration Testers" icon="bug">
+    Document findings with DREAD/STRIDE scoring and evidence
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Start the Quickstart" icon="play" href="/quickstart">
+    Create your first vulnerability and apply risk scoring
+  </Card>
+  <Card title="Install Locally" icon="download" href="/installation">
+    Set up VulnTrack on your development environment
+  </Card>
+</CardGroup>
+
+<Note>
+VulnTrack is **MIT licensed** and actively maintained on [GitHub](https://github.com/ogdmerlin/vulntrack). Contributions welcome!
+</Note>

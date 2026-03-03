@@ -1,0 +1,457 @@
+---
+title: Team Collaboration
+description: Multi-tenant workspaces with role-based access, comments, notifications, and audit logging
+---
+
+## Overview
+
+VulnTrack is built for team collaboration with enterprise-grade multi-tenancy, role-based access control, and comprehensive audit trails. Teams work in isolated workspaces with shared vulnerability tracking, real-time notifications, and threaded discussions.
+
+<CardGroup cols={2}>
+  <Card title="Team Workspaces" icon="users">
+    Isolated data environments with team-scoped vulnerability tracking
+  </Card>
+  <Card title="Role-Based Access" icon="shield">
+    Granular permissions with Admin, Analyst, and Viewer roles
+  </Card>
+  <Card title="Real-Time Notifications" icon="bell">
+    Instant alerts for assignments, status changes, and comments
+  </Card>
+  <Card title="Audit Logging" icon="clipboard-list">
+    Complete activity tracking for compliance and security monitoring
+  </Card>
+</CardGroup>
+
+## Team Workspaces
+
+VulnTrack implements strict multi-tenant data isolation:
+
+```prisma
+// From prisma/schema.prisma:10
+model Team {
+  id        String   @id @default(uuid())
+  name      String
+  users     User[]
+  vulnerabilities Vulnerability[]
+  invitations Invitation[]
+  auditLogs AuditLog[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+```
+
+<Warning>
+**Strict Data Isolation**: Users can only access data within their assigned team. Cross-tenant access is blocked at the database query level. Even admins cannot see other teams' data.
+</Warning>
+
+### Workspace Queries
+
+```typescript
+// From src/app/actions/vulnerabilities.ts:32
+const user = await prisma.user.findUnique({
+  where: { id: session.user.id },
+  select: { teamId: true, role: true }
+})
+
+let whereClause: any = {
+  teamId: user.teamId // Scope to team
+}
+
+// Strict isolation check
+if (!user?.teamId || user.teamId !== vulnerability.teamId) {
+  return { success: false, error: "Unauthorized: Cross-tenant access denied" }
+}
+```
+
+## User Roles
+
+VulnTrack supports three role levels:
+
+<Tabs>
+  <Tab title="ADMIN">
+    **Full Administrative Access**
+    
+    **Permissions:**
+    - Create, edit, delete any vulnerability
+    - Approve/reject pending submissions
+    - Assign vulnerabilities to team members
+    - Manage team users and invitations
+    - Access audit logs
+    - Configure team settings
+    
+    **Use Cases:**
+    - Security team leads
+    - CISO and security managers
+    - Compliance officers
+  </Tab>
+  <Tab title="ANALYST">
+    **Security Analyst Access**
+    
+    **Permissions:**
+    - Create vulnerabilities (requires admin approval)
+    - View all approved vulnerabilities
+    - Edit own vulnerabilities
+    - Add comments to any vulnerability
+    - Receive assignments
+    
+    **Restrictions:**
+    - Cannot approve submissions
+    - Cannot assign vulnerabilities
+    - Cannot delete vulnerabilities
+    - Cannot access audit logs
+    
+    **Use Cases:**
+    - Security analysts
+    - Penetration testers
+    - DevSecOps engineers
+  </Tab>
+  <Tab title="VIEWER">
+    **Read-Only Access**
+    
+    **Permissions:**
+    - View approved vulnerabilities
+    - Add comments
+    - Receive notifications
+    
+    **Restrictions:**
+    - Cannot create vulnerabilities
+    - Cannot edit any data
+    - Cannot assign or approve
+    
+    **Use Cases:**
+    - Developers
+    - Product managers
+    - Executives
+    - External auditors
+  </Tab>
+</Tabs>
+
+### Role Schema
+
+```prisma
+// From prisma/schema.prisma:27
+model User {
+  role          String    @default("VIEWER") // ADMIN, ANALYST, VIEWER
+  status        String    @default("ACTIVE") // ACTIVE, INACTIVE, PENDING
+  
+  teamId        String?
+  team          Team?     @relation(fields: [teamId], references: [id])
+}
+```
+
+## Comments System
+
+Threaded discussions on vulnerabilities:
+
+```typescript
+// From src/app/actions/comments.ts:11
+export async function addComment(vulnerabilityId: string, content: string) {
+  const session = await getServerSession(authOptions)
+  
+  // Verify user belongs to same team as vulnerability
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { teamId: true }
+  })
+  
+  const vuln = await prisma.vulnerability.findUnique({
+    where: { id: vulnerabilityId },
+    select: { teamId: true }
+  })
+  
+  if (!user?.teamId || user.teamId !== vuln.teamId) {
+    return { success: false, error: "Unauthorized access" }
+  }
+  
+  const comment = await prisma.comment.create({
+    data: {
+      content,
+      vulnerabilityId,
+      userId: session.user.id
+    },
+    include: {
+      user: {
+        select: { name: true, email: true, image: true }
+      }
+    }
+  })
+  
+  await logAudit(
+    "ADD_COMMENT",
+    "Vulnerability",
+    vulnerabilityId,
+    `Comment added by ${session.user.email}`
+  )
+  
+  return { success: true, data: comment }
+}
+```
+
+### Comment Schema
+
+```prisma
+// From prisma/schema.prisma:93
+model Comment {
+  id              String        @id @default(uuid())
+  content         String
+  userId          String
+  user            User          @relation(fields: [userId], references: [id])
+  vulnerabilityId String
+  vulnerability   Vulnerability @relation(fields: [vulnerabilityId])
+  createdAt       DateTime      @default(now())
+}
+```
+
+<Info>
+Comments support Markdown formatting for rich text discussions with code blocks, lists, and formatting.
+</Info>
+
+## Notification System
+
+Real-time alerts for critical events:
+
+```typescript
+// From src/app/actions/notifications.ts:70
+export async function createNotification(data: {
+  userId: string
+  type: string
+  title: string
+  message: string
+  link?: string
+}) {
+  const notification = await prisma.notification.create({
+    data: {
+      userId: data.userId,
+      type: data.type,
+      title: data.title,
+      message: data.message,
+      link: data.link
+    }
+  })
+  return { success: true, data: notification }
+}
+```
+
+### Notification Types
+
+<CardGroup cols={2}>
+  <Card title="VULNERABILITY_ASSIGNED" icon="user-plus">
+    Triggered when a vulnerability is assigned to a user. Includes link to vulnerability details.
+  </Card>
+  <Card title="STATUS_CHANGED" icon="arrows-rotate">
+    Notifies stakeholders when vulnerability status changes (OPEN → IN_PROGRESS → RESOLVED).
+  </Card>
+  <Card title="COMMENT_ADDED" icon="message">
+    Alerts when new comments are added to vulnerabilities you're involved with.
+  </Card>
+  <Card title="APPROVAL_REQUIRED" icon="check-circle">
+    Notifies admins when analyst submissions require approval.
+  </Card>
+</CardGroup>
+
+### Email Notifications
+
+<Accordion title="View Email Integration">
+```typescript
+// From src/app/actions/vulnerabilities.ts:456
+// Assignment notification with email
+const assigneeUser = await prisma.user.findUnique({
+  where: { id: assigneeId },
+  select: { email: true }
+})
+
+if (assigneeUser?.email) {
+  const { sendEmail } = await import("@/lib/email")
+  const { getAssignmentEmail } = await import("@/lib/email-templates")
+  
+  await sendEmail({
+    to: assigneeUser.email,
+    subject: `New Assignment: ${vulnerability.title}`,
+    html: getAssignmentEmail(vulnerability.title, vulnerabilityId),
+    text: `You have been assigned to vulnerability: ${vulnerability.title}`
+  })
+}
+```
+</Accordion>
+
+### Notification Schema
+
+```prisma
+// From prisma/schema.prisma:161
+model Notification {
+  id        String   @id @default(uuid())
+  type      String   // VULNERABILITY_ASSIGNED, STATUS_CHANGED, COMMENT_ADDED
+  title     String
+  message   String
+  read      Boolean  @default(false)
+  link      String?  // Optional link to navigate to
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  createdAt DateTime @default(now())
+}
+```
+
+### Managing Notifications
+
+```typescript
+// From src/app/actions/notifications.ts:32
+export async function markAsRead(notificationId: string) {
+  await prisma.notification.update({
+    where: { id: notificationId, userId: session.user.id },
+    data: { read: true }
+  })
+}
+
+export async function markAllAsRead() {
+  await prisma.notification.updateMany({
+    where: { userId: session.user.id, read: false },
+    data: { read: true }
+  })
+}
+```
+
+## Audit Logging
+
+<Warning>
+Audit logs are **admin-only** and scoped to team workspace. They provide complete traceability for compliance and security investigations.
+</Warning>
+
+```typescript
+// From src/app/actions/audit.ts:7
+export async function getAuditLogs() {
+  const session = await getServerSession(authOptions)
+  
+  if (session?.user?.role !== "ADMIN") {
+    return { success: false, error: "Unauthorized" }
+  }
+  
+  const admin = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { teamId: true }
+  })
+  
+  const logs = await prisma.auditLog.findMany({
+    where: { teamId: admin.teamId },
+    orderBy: { createdAt: 'desc' },
+    include: {
+      user: { select: { email: true } }
+    },
+    take: 100 // Last 100 logs
+  })
+  
+  return { success: true, data: logs }
+}
+```
+
+### Audit Log Schema
+
+```prisma
+// From prisma/schema.prisma:103
+model AuditLog {
+  id          String   @id @default(uuid())
+  action      String   // CREATE_VULNERABILITY, UPDATE_STATUS, ASSIGN, etc.
+  entityType  String   // Vulnerability, User, Team
+  entityId    String?
+  details     String?  // JSON or text description
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  teamId      String?
+  team        Team?    @relation(fields: [teamId], references: [id])
+  createdAt   DateTime @default(now())
+}
+```
+
+### Logged Actions
+
+- `CREATE_VULNERABILITY`: New vulnerability created
+- `UPDATE_VULNERABILITY`: Vulnerability modified
+- `DELETE_VULNERABILITY`: Vulnerability removed
+- `UPDATE_STATUS`: Status changed
+- `ASSIGN_VULNERABILITY`: Assignment changed
+- `APPROVE_VULNERABILITY`: Admin approval granted
+- `ADD_COMMENT`: Comment added
+- `CREATE_USER`: New team member added
+- `UPDATE_USER_ROLE`: Role changed
+- `DELETE_USER`: User removed from team
+
+### Creating Audit Entries
+
+```typescript
+// From src/lib/audit.ts:5
+export async function logAudit(
+  action: string,
+  entityType: string,
+  entityId: string | null,
+  details: string | null
+) {
+  const session = await getServerSession(authOptions)
+  if (!session?.user?.id) return
+  
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { teamId: true }
+  })
+  
+  await prisma.auditLog.create({
+    data: {
+      action,
+      entityType,
+      entityId,
+      details,
+      userId: session.user.id,
+      teamId: user?.teamId
+    }
+  })
+}
+```
+
+## Team Invitations
+
+Invite new members via email:
+
+```prisma
+// From prisma/schema.prisma:145
+model Invitation {
+  id        String   @id @default(uuid())
+  email     String
+  token     String   @unique
+  role      String   @default("VIEWER")
+  expiresAt DateTime
+  
+  teamId    String?
+  team      Team?    @relation(fields: [teamId], references: [id])
+  
+  inviterId String
+  inviter   User     @relation("UserInvitations", fields: [inviterId])
+  
+  createdAt DateTime @default(now())
+}
+```
+
+<Info>
+Invitation links expire after 7 days. Invited users are automatically added to the inviter's team workspace with the specified role.
+</Info>
+
+## User Management
+
+Admins can manage team members:
+
+- **Create Users**: Add new team members directly
+- **Update Roles**: Change user permissions
+- **Deactivate Users**: Mark users as INACTIVE (preserves audit trail)
+- **Delete Users**: Permanently remove team members
+
+<Warning>
+Deleting a user does NOT delete their created vulnerabilities. Vulnerabilities remain assigned to the team.
+</Warning>
+
+## Best Practices
+
+1. **Assign Roles Carefully**: Follow principle of least privilege
+2. **Use Comments for Context**: Document decisions and findings inline
+3. **Monitor Notifications**: Enable email alerts for critical vulnerabilities
+4. **Review Audit Logs**: Regular audit reviews for suspicious activity
+5. **Invite via Email**: Use invitation system rather than direct user creation
+6. **Rotate Admin Access**: Limit admin roles to essential personnel
+7. **Document Approvals**: Add comments when approving analyst submissions
+8. **Track Assignments**: Use assignment feature for accountability

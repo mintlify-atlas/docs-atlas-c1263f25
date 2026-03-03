@@ -1,0 +1,426 @@
+---
+title: 'STRIDE Threat Modeling'
+description: 'Use the STRIDE framework to categorize and analyze security threats across six key dimensions'
+---
+
+## Overview
+
+STRIDE is a threat modeling framework developed by Microsoft that helps identify and categorize security threats. Unlike CVSS and DREAD which focus on scoring vulnerability severity, STRIDE provides a structured approach to understanding the **nature of threats**.
+
+VulnTrack integrates STRIDE to help teams systematically analyze vulnerabilities through the lens of six distinct threat categories.
+
+## The Six STRIDE Threats
+
+<CardGroup cols={2}>
+  <Card title="Spoofing" icon="mask">
+    Illegally accessing and using another user's authentication information
+  </Card>
+  
+  <Card title="Tampering" icon="pen-to-square">
+    Malicious modification of data or code
+  </Card>
+  
+  <Card title="Repudiation" icon="ban">
+    Users denying actions without the ability to prove otherwise
+  </Card>
+  
+  <Card title="Information Disclosure" icon="eye">
+    Exposure of information to unauthorized individuals
+  </Card>
+  
+  <Card title="Denial of Service" icon="circle-xmark">
+    Denying or degrading service availability to legitimate users
+  </Card>
+  
+  <Card title="Elevation of Privilege" icon="arrow-up">
+    Gaining capabilities without proper authorization
+  </Card>
+</CardGroup>
+
+## Threat Categories in Detail
+
+<Accordion title="Spoofing (S)">
+  Spoofing involves pretending to be something or someone other than yourself.
+
+  ### Examples
+  - Impersonating another user by stealing credentials
+  - IP address spoofing
+  - Email spoofing for phishing attacks
+  - Session hijacking or cookie theft
+  - Man-in-the-middle attacks
+
+  ### Mitigation Strategies
+  - Implement strong authentication (MFA, biometrics)
+  - Use digital signatures and certificates
+  - Employ mutual TLS authentication
+  - Implement anti-phishing measures
+  - Use secure session management
+
+  ### Real-World Example
+  ```typescript
+  // Vulnerable: No authentication verification
+  app.get('/api/user/:id', (req, res) => {
+    const userData = db.getUser(req.params.id);
+    res.json(userData);
+  });
+
+  // Mitigated: Verify user identity
+  app.get('/api/user/:id', authenticateUser, (req, res) => {
+    if (req.user.id !== req.params.id && !req.user.isAdmin) {
+      return res.status(403).json({ error: 'Unauthorized' });
+    }
+    const userData = db.getUser(req.params.id);
+    res.json(userData);
+  });
+  ```
+</Accordion>
+
+<Accordion title="Tampering (T)">
+  Tampering involves malicious modification of data in memory, on disk, or in transit.
+
+  ### Examples
+  - Modifying data in a database
+  - Altering configuration files
+  - Manipulating data in transit (MITM)
+  - Modifying application binaries or libraries
+  - Changing log files to hide tracks
+
+  ### Mitigation Strategies
+  - Use digital signatures and checksums
+  - Implement access controls and permissions
+  - Encrypt data in transit and at rest
+  - Use integrity checking mechanisms
+  - Implement audit logging
+
+  ### Real-World Example
+  ```typescript
+  // Vulnerable: Client-side price calculation
+  // User can tamper with the price in the request
+  app.post('/api/checkout', (req, res) => {
+    const { items, totalPrice } = req.body;
+    processPayment(totalPrice);
+  });
+
+  // Mitigated: Server-side price calculation
+  app.post('/api/checkout', (req, res) => {
+    const { items } = req.body;
+    const calculatedPrice = calculateTotal(items);
+    processPayment(calculatedPrice);
+  });
+  ```
+</Accordion>
+
+<Accordion title="Repudiation (R)">
+  Repudiation threats involve users denying they performed an action, with no way to prove otherwise.
+
+  ### Examples
+  - Denying a financial transaction occurred
+  - Claiming not to have sent a message
+  - Disputing access to sensitive data
+  - Denying configuration changes
+  - Claiming not to have performed an action
+
+  ### Mitigation Strategies
+  - Implement comprehensive audit logging
+  - Use digital signatures for non-repudiation
+  - Timestamp all critical operations
+  - Use tamper-proof logging systems
+  - Implement secure log storage and backup
+
+  ### Real-World Example
+  ```typescript
+  // Vulnerable: No audit trail
+  app.delete('/api/record/:id', authenticateUser, (req, res) => {
+    db.deleteRecord(req.params.id);
+    res.json({ success: true });
+  });
+
+  // Mitigated: Comprehensive audit logging
+  app.delete('/api/record/:id', authenticateUser, async (req, res) => {
+    const record = db.getRecord(req.params.id);
+    
+    await auditLog.create({
+      action: 'DELETE_RECORD',
+      userId: req.user.id,
+      entityId: req.params.id,
+      entityType: 'Record',
+      details: JSON.stringify(record),
+      ipAddress: req.ip,
+      timestamp: new Date()
+    });
+    
+    db.deleteRecord(req.params.id);
+    res.json({ success: true });
+  });
+  ```
+</Accordion>
+
+<Accordion title="Information Disclosure (I)">
+  Information Disclosure involves exposing information to individuals who should not have access to it.
+
+  ### Examples
+  - Exposing sensitive data in error messages
+  - Information leakage through API responses
+  - Unencrypted data transmission
+  - Directory listing vulnerabilities
+  - Metadata exposure
+
+  ### Mitigation Strategies
+  - Implement proper access controls
+  - Use encryption for sensitive data
+  - Sanitize error messages
+  - Apply principle of least privilege
+  - Use secure coding practices
+
+  ### Real-World Example
+  ```typescript
+  // Vulnerable: Exposes internal error details
+  app.get('/api/data', (req, res) => {
+    try {
+      const data = db.query('SELECT * FROM sensitive_data');
+      res.json(data);
+    } catch (error) {
+      res.status(500).json({ 
+        error: error.message,
+        stack: error.stack,
+        query: 'SELECT * FROM sensitive_data'
+      });
+    }
+  });
+
+  // Mitigated: Generic error messages, proper access control
+  app.get('/api/data', authenticateUser, authorize('read:data'), (req, res) => {
+    try {
+      const data = db.query('SELECT * FROM sensitive_data WHERE owner_id = ?', [req.user.id]);
+      res.json(data);
+    } catch (error) {
+      logger.error('Database error', { error, userId: req.user.id });
+      res.status(500).json({ error: 'An internal error occurred' });
+    }
+  });
+  ```
+</Accordion>
+
+<Accordion title="Denial of Service (D)">
+  DoS threats involve making a system or application unavailable to legitimate users.
+
+  ### Examples
+  - Resource exhaustion attacks
+  - Algorithmic complexity attacks
+  - Distributed denial of service (DDoS)
+  - Application-layer DoS
+  - Database query abuse
+
+  ### Mitigation Strategies
+  - Implement rate limiting and throttling
+  - Use caching and CDNs
+  - Set resource quotas and limits
+  - Implement circuit breakers
+  - Use auto-scaling infrastructure
+
+  ### Real-World Example
+  ```typescript
+  // Vulnerable: No rate limiting
+  app.post('/api/search', (req, res) => {
+    const results = performExpensiveSearch(req.body.query);
+    res.json(results);
+  });
+
+  // Mitigated: Rate limiting and resource constraints
+  import rateLimit from 'express-rate-limit';
+
+  const searchLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // Limit each IP to 100 requests per windowMs
+    message: 'Too many requests, please try again later'
+  });
+
+  app.post('/api/search', searchLimiter, async (req, res) => {
+    const { query } = req.body;
+    
+    // Timeout for long-running queries
+    const results = await Promise.race([
+      performExpensiveSearch(query),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Query timeout')), 5000)
+      )
+    ]);
+    
+    res.json(results);
+  });
+  ```
+</Accordion>
+
+<Accordion title="Elevation of Privilege (E)">
+  Elevation of Privilege involves gaining capabilities without proper authorization.
+
+  ### Examples
+  - Exploiting buffer overflows to gain admin access
+  - SQL injection to bypass authentication
+  - Privilege escalation through misconfiguration
+  - Bypassing authorization checks
+  - Exploiting insecure direct object references
+
+  ### Mitigation Strategies
+  - Implement least privilege principle
+  - Use role-based access control (RBAC)
+  - Validate all authorization checks server-side
+  - Keep systems patched and updated
+  - Use security controls at multiple layers
+
+  ### Real-World Example
+  ```typescript
+  // Vulnerable: Insecure direct object reference
+  app.put('/api/user/:id/role', (req, res) => {
+    db.updateUser(req.params.id, { role: req.body.role });
+    res.json({ success: true });
+  });
+
+  // Mitigated: Proper authorization checks
+  app.put('/api/user/:id/role', 
+    authenticateUser, 
+    authorize('admin'), // Only admins can change roles
+    (req, res) => {
+      const { role } = req.body;
+      
+      // Validate role is a valid option
+      if (!['VIEWER', 'ANALYST', 'ADMIN'].includes(role)) {
+        return res.status(400).json({ error: 'Invalid role' });
+      }
+      
+      // Prevent users from elevating themselves
+      if (req.user.id === req.params.id) {
+        return res.status(403).json({ error: 'Cannot modify your own role' });
+      }
+      
+      db.updateUser(req.params.id, { role });
+      
+      auditLog.create({
+        action: 'ROLE_CHANGE',
+        userId: req.user.id,
+        targetUserId: req.params.id,
+        details: `Changed role to ${role}`
+      });
+      
+      res.json({ success: true });
+    }
+  );
+  ```
+</Accordion>
+
+## Data Storage
+
+STRIDE classifications are stored as boolean flags in VulnTrack:
+
+```prisma
+model StrideScore {
+  id                    String        @id @default(uuid())
+  spoofing              Boolean       @default(false)
+  tampering             Boolean       @default(false)
+  reputation            Boolean       @default(false)
+  informationDisclosure Boolean       @default(false)
+  denialOfService       Boolean       @default(false)
+  elevationOfPrivilege  Boolean       @default(false)
+  
+  vulnerabilityId       String        @unique
+  vulnerability         Vulnerability @relation(fields: [vulnerabilityId], references: [id], onDelete: Cascade)
+}
+```
+
+A vulnerability can map to **multiple STRIDE categories** simultaneously. For example, a SQL injection vulnerability might be marked as:
+
+```typescript
+const strideScore = {
+  spoofing: true,              // Can bypass authentication
+  tampering: true,             // Can modify database data
+  reputation: false,           // Not directly related
+  informationDisclosure: true, // Can extract sensitive data
+  denialOfService: false,      // Typically not a DoS vector
+  elevationOfPrivilege: true   // Can gain admin access
+}
+```
+
+## STRIDE and the CIA Triad
+
+STRIDE maps naturally to the CIA (Confidentiality, Integrity, Availability) security model:
+
+| STRIDE Threat | CIA Property Violated |
+|---------------|----------------------|
+| Spoofing | Authentication |
+| Tampering | Integrity |
+| Repudiation | Non-repudiation |
+| Information Disclosure | Confidentiality |
+| Denial of Service | Availability |
+| Elevation of Privilege | Authorization |
+
+## Using STRIDE in Threat Modeling Sessions
+
+1. **Identify Assets**: List the critical assets in your system (data, services, infrastructure)
+
+2. **Create Data Flow Diagrams**: Visualize how data flows through your system
+
+3. **Apply STRIDE to Each Element**: For each component, ask:
+   - Can it be **Spoofed**?
+   - Can data be **Tampered** with?
+   - Can actions be **Repudiated**?
+   - Can **Information** be **Disclosed**?
+   - Can service be **Denied**?
+   - Can privileges be **Elevated**?
+
+4. **Document Threats**: Create vulnerability records in VulnTrack with STRIDE classifications
+
+5. **Prioritize and Mitigate**: Use CVSS/DREAD scores alongside STRIDE to prioritize remediation
+
+## Example: Web Application Analysis
+
+Let's analyze a login endpoint:
+
+```typescript
+POST /api/auth/login
+Body: { "email": "user@example.com", "password": "secret123" }
+```
+
+### STRIDE Analysis
+
+| Threat | Present? | Description | Mitigation |
+|--------|----------|-------------|------------|
+| Spoofing | ✅ Yes | Attacker could brute force credentials | Implement rate limiting, MFA, account lockout |
+| Tampering | ✅ Yes | MITM could modify request if not encrypted | Enforce HTTPS, use HSTS |
+| Repudiation | ✅ Yes | No logging of login attempts | Log all auth attempts with IP, timestamp |
+| Information Disclosure | ✅ Yes | Error messages reveal if email exists | Use generic error messages |
+| Denial of Service | ✅ Yes | No rate limiting on login endpoint | Implement rate limiting, CAPTCHA |
+| Elevation of Privilege | ✅ Yes | Default credentials might exist | Remove default accounts, force password change |
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Early in Development" icon="seedling">
+    Apply STRIDE during design phase to identify threats before they become vulnerabilities.
+  </Card>
+  
+  <Card title="Collaborative Sessions" icon="users">
+    Conduct STRIDE analysis with cross-functional teams (developers, security, operations).
+  </Card>
+  
+  <Card title="Regular Updates" icon="rotate">
+    Revisit STRIDE analysis when architecture changes or new features are added.
+  </Card>
+  
+  <Card title="Document Everything" icon="file-lines">
+    Use VulnTrack to document all identified threats and their mitigations.
+  </Card>
+</CardGroup>
+
+## When to Use STRIDE
+
+- **Design Reviews**: During architecture and design reviews to identify potential threats
+- **Code Reviews**: When reviewing security-critical code paths
+- **Incident Analysis**: After security incidents to understand the attack surface
+- **Compliance**: For regulatory requirements that mandate threat modeling
+- **Training**: To educate developers about security threats
+
+## Related Frameworks
+
+- [CVSS Scoring](/scoring/cvss) - Technical severity assessment
+- [DREAD Scoring](/scoring/dread) - Risk-based prioritization
+- [Framework Comparison](/scoring/comparison) - Compare all three frameworks

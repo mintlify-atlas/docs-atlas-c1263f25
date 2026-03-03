@@ -1,0 +1,719 @@
+---
+title: Installation Guide
+description: Complete setup instructions for VulnTrack - from environment configuration to local development
+---
+
+## Installation Overview
+
+VulnTrack is a Next.js 14 application with a PostgreSQL database. This guide covers local development setup and deployment considerations.
+
+<Info>
+**Prerequisites**: Node.js 20+, PostgreSQL 14+, and a terminal with git installed.
+</Info>
+
+## Quick Install
+
+<Steps>
+  <Step title="Clone the Repository">
+    Get the latest version from GitHub:
+
+    ```bash
+    git clone https://github.com/ogdmerlin/vulntrack.git
+    cd vulntrack
+    ```
+
+    The repository structure:
+    ```text
+    vulntrack/
+    ├── src/
+    │   ├── app/              # Next.js App Router pages
+    │   ├── components/       # React components
+    │   └── lib/              # Utilities and configuration
+    ├── prisma/
+    │   └── schema.prisma     # Database schema
+    ├── public/               # Static assets
+    └── package.json          # Dependencies
+    ```
+  </Step>
+
+  <Step title="Install Dependencies">
+    VulnTrack uses npm as the package manager:
+
+    <CodeGroup>
+    ```bash npm
+    npm install
+    ```
+
+    ```bash pnpm (Alternative)
+    pnpm install
+    ```
+
+    ```bash yarn (Alternative)
+    yarn install
+    ```
+    </CodeGroup>
+
+    This installs the core dependencies from `package.json`:
+
+    **Framework**:
+    - `next@14.2.33` - Next.js framework
+    - `react@18.3.1` - React library
+    - `typescript@5` - TypeScript support
+
+    **Database**:
+    - `@prisma/client@5.21.0` - Prisma ORM
+    - `prisma@5.21.0` - Prisma CLI (dev dependency)
+
+    **Authentication**:
+    - `next-auth@4.24.13` - NextAuth.js
+    - `@next-auth/prisma-adapter@1.0.7` - Prisma adapter
+    - `bcryptjs@3.0.3` - Password hashing
+
+    **UI Libraries**:
+    - `@radix-ui/react-*` - Headless UI components
+    - `tailwindcss@3.4.14` - Utility-first CSS
+    - `lucide-react@0.454.0` - Icon library
+
+    **Additional Features**:
+    - `zod@4.1.13` - Schema validation
+    - `react-hook-form@7.68.0` - Form handling
+    - `jspdf@3.0.4` - PDF generation
+    - `react-markdown@10.1.0` - Markdown rendering
+
+    <Note>
+    The `postinstall` script in `package.json` automatically runs `prisma generate` after installation.
+    </Note>
+  </Step>
+
+  <Step title="Configure Environment Variables">
+    Create a `.env` file in the project root:
+
+    ```bash
+    touch .env
+    ```
+
+    Add the following configuration:
+
+    ```bash .env
+    # Database Configuration
+    DATABASE_URL="postgresql://username:password@localhost:5432/vulntrack"
+
+    # NextAuth Configuration
+    NEXTAUTH_URL="http://localhost:3000"
+    NEXTAUTH_SECRET="your-secret-key-here"  # Generate with: openssl rand -base64 32
+
+    # Optional: VulnCheck API (for enhanced CVE data)
+    VULNCHECK_API_KEY="your-vulncheck-api-key"
+
+    # Optional: Email Configuration (for notifications)
+    RESEND_API_KEY="your-resend-api-key"
+    FROM_EMAIL="noreply@yourdomain.com"
+    
+    # Optional: Application URL (for email links)
+    NEXT_PUBLIC_APP_URL="http://localhost:3000"
+    ```
+
+    ### Environment Variable Details
+
+    <AccordionGroup>
+      <Accordion title="DATABASE_URL (Required)" icon="database">
+        PostgreSQL connection string format:
+        ```
+        postgresql://USER:PASSWORD@HOST:PORT/DATABASE
+        ```
+
+        **Local Development**:
+        ```bash
+        DATABASE_URL="postgresql://postgres:postgres@localhost:5432/vulntrack"
+        ```
+
+        **Production (example with SSL)**:
+        ```bash
+        DATABASE_URL="postgresql://user:pass@prod-db.example.com:5432/vulntrack?sslmode=require"
+        ```
+
+        <Warning>
+        Never commit `.env` files to version control. Add `.env` to your `.gitignore`.
+        </Warning>
+      </Accordion>
+
+      <Accordion title="NEXTAUTH_SECRET (Required)" icon="key">
+        Used to encrypt session tokens. Generate a secure random string:
+
+        ```bash
+        openssl rand -base64 32
+        ```
+
+        Example output:
+        ```
+        J8fHk2L9mN3pQ5rT7vX0yZ4aB6cE8gI1jK3mO5qS7uW=
+        ```
+
+        Use this value as your `NEXTAUTH_SECRET`.
+      </Accordion>
+
+      <Accordion title="VULNCHECK_API_KEY (Optional)" icon="shield-check">
+        Enables enhanced CVE data fetching from VulnCheck.
+
+        **Benefits**:
+        - Faster CVE lookups
+        - Real-time KEV (Known Exploited Vulnerabilities) detection
+        - More comprehensive metadata
+
+        **Get an API key**:
+        1. Sign up at [vulncheck.com](https://vulncheck.com)
+        2. Navigate to API Keys section
+        3. Generate a new key
+        4. Add to `.env`: `VULNCHECK_API_KEY="vc_xxxxx"`
+
+        **Fallback**: If not configured, VulnTrack uses the free NIST NVD API (from `src/app/actions/cve.ts`).
+
+        ```typescript
+        // CVE import logic with fallback
+        const vulnCheckResult = await fetchVulnCheckData(cveId)
+        if (vulnCheckResult) {
+          source = "VulnCheck"
+          cveData = vulnCheckResult
+        } else {
+          // Fallback to NIST
+          const nistResult = await fetchNistData(cveId)
+          cveData = nistResult
+        }
+        ```
+      </Accordion>
+
+      <Accordion title="RESEND_API_KEY (Optional)" icon="envelope">
+        Enables email notifications for vulnerability assignments.
+
+        **Setup**:
+        1. Create account at [resend.com](https://resend.com)
+        2. Add and verify your domain
+        3. Generate API key
+        4. Configure:
+           ```bash
+           RESEND_API_KEY="re_xxxxx"
+           FROM_EMAIL="noreply@yourdomain.com"
+           ```
+
+        **Email Triggers** (from `src/app/actions/vulnerabilities.ts`):
+        - Vulnerability assignment
+        - Status changes (if configured)
+        - Team invitations
+
+        <Info>
+        Without this configuration, the app works but email notifications are disabled.
+        </Info>
+      </Accordion>
+    </AccordionGroup>
+  </Step>
+
+  <Step title="Set Up PostgreSQL Database">
+    VulnTrack requires PostgreSQL 14 or higher.
+
+    ### Option 1: Local PostgreSQL Installation
+
+    <CodeGroup>
+    ```bash macOS (Homebrew)
+    brew install postgresql@14
+    brew services start postgresql@14
+    createdb vulntrack
+    ```
+
+    ```bash Ubuntu/Debian
+    sudo apt update
+    sudo apt install postgresql postgresql-contrib
+    sudo systemctl start postgresql
+    sudo -u postgres createdb vulntrack
+    sudo -u postgres psql -c "ALTER USER postgres PASSWORD 'your-password';"
+    ```
+
+    ```bash Windows (via Chocolatey)
+    choco install postgresql
+    # Then use pgAdmin or psql to create database
+    ```
+    </CodeGroup>
+
+    ### Option 2: Docker Container
+
+    Run PostgreSQL in Docker for isolated development:
+
+    ```bash
+    docker run --name vulntrack-db \
+      -e POSTGRES_PASSWORD=postgres \
+      -e POSTGRES_DB=vulntrack \
+      -p 5432:5432 \
+      -d postgres:14
+    ```
+
+    Verify connection:
+    ```bash
+    docker exec -it vulntrack-db psql -U postgres -d vulntrack
+    ```
+
+    ### Option 3: Cloud Database
+
+    Use a managed PostgreSQL service:
+
+    **Providers**:
+    - [Supabase](https://supabase.com) - Free tier with 500MB
+    - [Neon](https://neon.tech) - Serverless Postgres
+    - [Railway](https://railway.app) - $5/month starter
+    - [Render](https://render.com) - Free tier available
+
+    After provisioning, update `DATABASE_URL` in `.env` with the connection string.
+  </Step>
+
+  <Step title="Initialize the Database Schema">
+    VulnTrack uses Prisma for database management. The schema is defined in `prisma/schema.prisma`.
+
+    ### Generate Prisma Client
+
+    ```bash
+    npx prisma generate
+    ```
+
+    This creates the TypeScript types and Prisma Client based on your schema.
+
+    ### Push Schema to Database
+
+    ```bash
+    npx prisma db push
+    ```
+
+    This command:
+    - Creates all tables defined in `schema.prisma`
+    - Sets up relationships and constraints
+    - Enables full-text search indexes
+
+    **Tables created**:
+    ```sql
+    - Team              # Multi-tenant workspaces
+    - User              # Authentication and profiles
+    - Vulnerability     # Core vulnerability records
+    - DreadScore        # DREAD risk scores (1:1 with Vulnerability)
+    - StrideScore       # STRIDE classifications (1:1 with Vulnerability)
+    - Comment           # Collaboration comments
+    - Invitation        # User invitation tokens
+    - Notification      # In-app notifications
+    - AuditLog          # Compliance and activity tracking
+    ```
+
+    ### Key Schema Features
+
+    From `prisma/schema.prisma`:
+
+    ```prisma
+    model Vulnerability {
+      id          String   @id @default(uuid())
+      title       String
+      description String
+      status      String   # OPEN | IN_PROGRESS | REMEDIATED | ACCEPTED | RESOLVED
+      severity    String   # CRITICAL | HIGH | MEDIUM | LOW | INFO
+      
+      userId      String
+      user        User     @relation(fields: [userId], references: [id])
+      
+      teamId      String?
+      team        Team?    @relation(fields: [teamId], references: [id])
+      
+      assignedToId String?
+      assignedTo   User?    @relation("AssignedVulnerabilities", fields: [assignedToId], references: [id])
+      
+      approvalStatus String @default("APPROVED") # PENDING | APPROVED | REJECTED
+      
+      dread       DreadScore?
+      stride      StrideScore?
+      comments    Comment[]
+      
+      # CVE Import Fields
+      cveId             String?
+      cvssScore         Float?
+      affectedSystems   String?  # JSON serialized array
+      mitigations       String?  # JSON serialized array
+      references        String?  # JSON serialized array
+      
+      createdAt   DateTime @default(now())
+      updatedAt   DateTime @updatedAt
+    }
+    ```
+
+    <Warning>
+    `prisma db push` is for development. For production, use migrations:
+    ```bash
+    npx prisma migrate deploy
+    ```
+    </Warning>
+
+    ### Verify Database Schema
+
+    Open Prisma Studio to inspect your database:
+
+    ```bash
+    npx prisma studio
+    ```
+
+    This opens a web interface at `http://localhost:5555` where you can:
+    - View all tables
+    - Browse records
+    - Edit data manually (useful for testing)
+  </Step>
+
+  <Step title="Seed Initial Data (Optional)">
+    Optionally seed the database with sample data for testing.
+
+    Check if a seed script exists:
+    ```bash
+    ls prisma/seed.ts  # or seed.js
+    ```
+
+    If available, run:
+    ```bash
+    npx prisma db seed
+    ```
+
+    This typically creates:
+    - Sample admin user
+    - Demo team
+    - Example vulnerabilities
+    - Test DREAD/STRIDE scores
+
+    <Tip>
+    The first registered user is automatically made an Admin, so seeding is optional for getting started.
+    </Tip>
+  </Step>
+
+  <Step title="Start the Development Server">
+    Launch VulnTrack locally:
+
+    ```bash
+    npm run dev
+    ```
+
+    The application starts on `http://localhost:3000`.
+
+    **What happens on startup**:
+    1. Next.js compiles React components
+    2. Prisma Client connects to PostgreSQL
+    3. NextAuth.js initializes session management
+    4. API routes become available at `/api/*`
+
+    ### Verify Installation
+
+    You should see:
+    ```bash
+    ▲ Next.js 14.2.33
+    - Local:        http://localhost:3000
+    - Environments: .env
+
+    ✓ Ready in 2.3s
+    ```
+
+    Navigate to `http://localhost:3000` to see the landing page.
+
+    ### Common Startup Issues
+
+    <AccordionGroup>
+      <Accordion title="Database Connection Error" icon="circle-xmark">
+        ```
+        Error: P1001 Can't reach database server
+        ```
+
+        **Solutions**:
+        1. Verify PostgreSQL is running: `pg_isready`
+        2. Check `DATABASE_URL` format in `.env`
+        3. Test connection: `psql $DATABASE_URL`
+        4. Ensure database exists: `createdb vulntrack`
+      </Accordion>
+
+      <Accordion title="Prisma Client Not Generated" icon="circle-xmark">
+        ```
+        Error: @prisma/client did not initialize yet
+        ```
+
+        **Solution**:
+        ```bash
+        npx prisma generate
+        npm run dev
+        ```
+      </Accordion>
+
+      <Accordion title="Port Already in Use" icon="circle-xmark">
+        ```
+        Error: Port 3000 is already in use
+        ```
+
+        **Solution**:
+        ```bash
+        # Use a different port
+        PORT=3001 npm run dev
+
+        # Or kill the process using port 3000
+        lsof -ti:3000 | xargs kill
+        ```
+      </Accordion>
+    </AccordionGroup>
+  </Step>
+</Steps>
+
+## Production Deployment
+
+VulnTrack can be deployed to any platform supporting Next.js 14.
+
+### Build for Production
+
+```bash
+npm run build
+```
+
+From `package.json`, this runs:
+```json
+"build": "npx prisma generate && npx prisma db push --accept-data-loss && next build"
+```
+
+<Warning>
+`--accept-data-loss` flag is for CI/CD. For production databases, use migrations:
+```bash
+npx prisma migrate deploy
+```
+</Warning>
+
+### Start Production Server
+
+```bash
+npm run start
+```
+
+This serves the optimized build on the configured port.
+
+### Deployment Platforms
+
+<CardGroup cols={2}>
+  <Card title="Vercel" icon="triangle">
+    **Best for**: Quick deployments
+
+    ```bash
+    # Install Vercel CLI
+    npm i -g vercel
+    
+    # Deploy
+    vercel
+    ```
+
+    Configure environment variables in Vercel dashboard.
+  </Card>
+
+  <Card title="Docker" icon="docker">
+    **Best for**: Self-hosted environments
+
+    ```dockerfile
+    FROM node:20-alpine
+    WORKDIR /app
+    COPY package*.json ./
+    RUN npm ci --only=production
+    COPY . .
+    RUN npx prisma generate
+    RUN npm run build
+    CMD ["npm", "start"]
+    ```
+  </Card>
+
+  <Card title="Railway" icon="train">
+    **Best for**: Full-stack deployments
+
+    1. Connect GitHub repo
+    2. Railway auto-provisions PostgreSQL
+    3. Configure environment variables
+    4. Deploy with one click
+  </Card>
+
+  <Card title="DigitalOcean App Platform" icon="server">
+    **Best for**: Scalable deployments
+
+    1. Create new app from GitHub
+    2. Attach managed PostgreSQL
+    3. Set environment variables
+    4. Configure build command: `npm run build`
+  </Card>
+</CardGroup>
+
+### Production Checklist
+
+<Steps>
+  <Step title="Security Configuration">
+    - [ ] Set strong `NEXTAUTH_SECRET`
+    - [ ] Enable HTTPS/SSL
+    - [ ] Configure CORS if using API
+    - [ ] Set secure cookie flags
+    - [ ] Restrict database access to app server only
+  </Step>
+
+  <Step title="Database Configuration">
+    - [ ] Use managed PostgreSQL or configure backups
+    - [ ] Set connection pool limits
+    - [ ] Enable SSL mode: `?sslmode=require`
+    - [ ] Run migrations instead of `db push`
+  </Step>
+
+  <Step title="Environment Variables">
+    - [ ] Update `NEXTAUTH_URL` to production domain
+    - [ ] Configure `NEXT_PUBLIC_APP_URL`
+    - [ ] Set up production email sender
+    - [ ] Add VulnCheck API key (optional but recommended)
+  </Step>
+
+  <Step title="Monitoring & Logging">
+    - [ ] Set up error tracking (Sentry, LogRocket)
+    - [ ] Enable application logs
+    - [ ] Monitor database performance
+    - [ ] Set up uptime monitoring
+  </Step>
+</Steps>
+
+## Development Tools
+
+### Useful Commands
+
+<CodeGroup>
+```bash Database Management
+# Open Prisma Studio
+npx prisma studio
+
+# Create migration
+npx prisma migrate dev --name add_new_field
+
+# Reset database (caution: deletes data)
+npx prisma migrate reset
+
+# View database schema
+npx prisma db pull
+```
+
+```bash Development
+# Run development server
+npm run dev
+
+# Build production bundle
+npm run build
+
+# Start production server
+npm start
+
+# Run linter
+npm run lint
+```
+
+```bash Troubleshooting
+# Clear Next.js cache
+rm -rf .next
+
+# Reinstall dependencies
+rm -rf node_modules package-lock.json
+npm install
+
+# Regenerate Prisma Client
+npx prisma generate --force
+```
+</CodeGroup>
+
+### VS Code Extensions
+
+Recommended extensions for VulnTrack development:
+
+- **Prisma** - Syntax highlighting for `.prisma` files
+- **ES7+ React/Redux** - React snippets
+- **Tailwind CSS IntelliSense** - Autocomplete for Tailwind classes
+- **TypeScript Error Translator** - Readable TypeScript errors
+
+## Updating VulnTrack
+
+To update to the latest version:
+
+```bash
+# Pull latest changes
+git pull origin main
+
+# Install new dependencies
+npm install
+
+# Update database schema
+npx prisma generate
+npx prisma db push  # or migrate deploy in production
+
+# Rebuild application
+npm run build
+
+# Restart server
+npm start
+```
+
+<Warning>
+**Always backup your database before updating**, especially in production:
+```bash
+pg_dump -U postgres vulntrack > backup-$(date +%Y%m%d).sql
+```
+</Warning>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart Guide" icon="rocket" href="/quickstart">
+    Create your first vulnerability and explore features
+  </Card>
+  <Card title="Architecture" icon="diagram-project" href="/essentials/architecture">
+    Understand VulnTrack's technical design
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Session Not Persisting" icon="user-lock">
+    **Symptom**: Logged out immediately after login
+
+    **Causes**:
+    1. Missing or invalid `NEXTAUTH_SECRET`
+    2. Incorrect `NEXTAUTH_URL`
+    3. Cookie issues (check browser console)
+
+    **Solution**:
+    ```bash .env
+    NEXTAUTH_SECRET="$(openssl rand -base64 32)"
+    NEXTAUTH_URL="http://localhost:3000"  # Must match browser URL exactly
+    ```
+  </Accordion>
+
+  <Accordion title="CVE Import Not Working" icon="cloud-arrow-down">
+    **Symptom**: "CVE not found" errors
+
+    **Diagnosis**:
+    Check the server logs for API errors:
+    ```bash
+    # Look for VulnCheck or NIST errors
+    npm run dev 2>&1 | grep -i "CVE\|API"
+    ```
+
+    **Solutions**:
+    1. Verify `VULNCHECK_API_KEY` if configured
+    2. Check NIST API rate limits (if no VulnCheck)
+    3. Test CVE ID format: `CVE-YYYY-NNNNN`
+  </Accordion>
+
+  <Accordion title="Permission Errors" icon="ban">
+    **Symptom**: "Unauthorized" when accessing features
+
+    **Check user role**:
+    ```sql
+    -- Open Prisma Studio or psql
+    SELECT email, role FROM "User";
+    ```
+
+    **Update role if needed**:
+    ```sql
+    UPDATE "User" SET role = 'ADMIN' WHERE email = 'your@email.com';
+    ```
+  </Accordion>
+</AccordionGroup>
+
+<Card title="Need Help?" icon="life-ring">
+  Join the community or report issues on [GitHub](https://github.com/ogdmerlin/vulntrack)
+</Card>

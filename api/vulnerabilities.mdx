@@ -1,0 +1,452 @@
+---
+title: 'Vulnerabilities'
+description: 'CRUD operations for vulnerability management'
+---
+
+## Overview
+
+Vulnerability server actions provide complete CRUD functionality with built-in team isolation, approval workflows, and assignment capabilities.
+
+All actions are located in `src/app/actions/vulnerabilities.ts`.
+
+## getVulnerabilities
+
+Retrieve all vulnerabilities visible to the current user.
+
+```typescript
+import { getVulnerabilities } from '@/app/actions/vulnerabilities'
+
+const result = await getVulnerabilities()
+```
+
+**Visibility Rules:**
+
+- **Admins:** See all team vulnerabilities regardless of approval status
+- **Contributors/Viewers:** See approved vulnerabilities + their own pending submissions
+
+**Response:**
+
+<ResponseField name="success" type="boolean">
+  Operation success status
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Array of vulnerability objects with related data:
+  - `dread`: DREAD scoring object
+  - `stride`: STRIDE threat model
+  - `user`: Creator information (name, email)
+</ResponseField>
+
+<ResponseField name="error" type="string">
+  Error message if operation failed
+</ResponseField>
+
+## getVulnerability
+
+Retrieve a single vulnerability by ID.
+
+```typescript
+import { getVulnerability } from '@/app/actions/vulnerabilities'
+
+const result = await getVulnerability('vuln_id')
+```
+
+<ParamField path="id" type="string" required>
+  Unique vulnerability identifier
+</ParamField>
+
+**Authorization:**
+
+- Strict team isolation enforced
+- Non-admins can only view approved vulnerabilities or their own submissions
+- Returns "Unauthorized: Cross-tenant access denied" for out-of-team access
+
+**Response:**
+
+<ResponseField name="data" type="object">
+  Vulnerability object including:
+  - `dread`: DREAD scoring
+  - `stride`: STRIDE analysis
+  - `assignedTo`: Assigned user details (id, name, email)
+</ResponseField>
+
+## createVulnerability
+
+Create a new vulnerability record.
+
+```typescript
+import { createVulnerability } from '@/app/actions/vulnerabilities'
+
+const result = await createVulnerability({
+  title: 'SQL Injection in User Login',
+  description: 'Unsanitized input allows SQL injection attacks',
+  severity: 'CRITICAL',
+  cveId: 'CVE-2024-1234', // Optional
+  dread: {
+    damage: 9,
+    reproducibility: 8,
+    exploitability: 7,
+    affectedUsers: 10,
+    discoverability: 6
+  },
+  stride: {
+    spoofing: true,
+    tampering: true,
+    repudiation: false,
+    informationDisclosure: true,
+    denialOfService: false,
+    elevationOfPrivilege: true
+  }
+})
+```
+
+<ParamField path="title" type="string" required>
+  Vulnerability title/summary
+</ParamField>
+
+<ParamField path="description" type="string" required>
+  Detailed vulnerability description
+</ParamField>
+
+<ParamField path="severity" type="'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'" required>
+  Severity classification
+</ParamField>
+
+<ParamField path="cveId" type="string">
+  Optional CVE identifier. If provided, VulnTrack will:
+  1. Fetch data from VulnCheck API (if configured)
+  2. Fallback to NIST NVD API
+  3. Auto-populate CVSS scores, references, and affected systems
+  4. Generate DREAD scores based on CVSS metrics
+</ParamField>
+
+<ParamField path="dread" type="object">
+  Optional DREAD scoring object with numeric values (1-10):
+  - `damage`
+  - `reproducibility`
+  - `exploitability`
+  - `affectedUsers`
+  - `discoverability`
+</ParamField>
+
+<ParamField path="stride" type="object">
+  Optional STRIDE threat model with boolean flags:
+  - `spoofing`
+  - `tampering`
+  - `repudiation`
+  - `informationDisclosure`
+  - `denialOfService`
+  - `elevationOfPrivilege`
+</ParamField>
+
+**Behavior:**
+
+- Admin-created vulnerabilities are auto-approved
+- Contributor/Viewer submissions are set to `PENDING` status
+- Status is always `OPEN` on creation
+- If CVE ID provided, enriches data from external APIs
+- Prevents duplicate CVE imports within the same team
+- Auto-generates default mitigation steps
+- Derives asset name from affected systems
+
+**Response:**
+
+<ResponseField name="data" type="object">
+  The created vulnerability object
+</ResponseField>
+
+<Warning>
+  Duplicate CVE IDs within the same team will return an error: "This CVE has already been imported for your team."
+</Warning>
+
+## updateVulnerability
+
+Update an existing vulnerability.
+
+```typescript
+import { updateVulnerability } from '@/app/actions/vulnerabilities'
+
+const result = await updateVulnerability('vuln_id', {
+  title: 'Updated Title',
+  description: 'Updated description',
+  severity: 'HIGH',
+  status: 'IN_PROGRESS',
+  dread: {
+    damage: 8,
+    reproducibility: 7,
+    exploitability: 6,
+    affectedUsers: 9,
+    discoverability: 5
+  }
+})
+```
+
+<ParamField path="id" type="string" required>
+  Vulnerability ID to update
+</ParamField>
+
+<ParamField path="data" type="object" required>
+  Update payload with fields:
+  - `title`
+  - `description`
+  - `severity`
+  - `status`
+  - `dread` (optional)
+  - `stride` (optional)
+</ParamField>
+
+**Authorization:**
+
+- Must be the vulnerability owner OR an admin
+- Must belong to the same team
+- Cannot update vulnerabilities from other teams
+
+**Cache Invalidation:**
+
+- Revalidates `/dashboard/vulnerabilities`
+- Revalidates `/dashboard/vulnerabilities/{id}`
+
+## deleteVulnerability
+
+Delete a vulnerability and all related data.
+
+```typescript
+import { deleteVulnerability } from '@/app/actions/vulnerabilities'
+
+const result = await deleteVulnerability('vuln_id')
+```
+
+<ParamField path="id" type="string" required>
+  Vulnerability ID to delete
+</ParamField>
+
+**Authorization:**
+
+- Only the vulnerability owner can delete
+- Admins do not have delete permissions (security measure)
+
+**Cascading Deletes:**
+
+Automatically deletes:
+- DREAD scores
+- STRIDE assessments
+- Comments
+
+**Audit Trail:**
+
+- Logs deletion event with vulnerability title
+- Records user who performed the deletion
+
+## approveVulnerability
+
+Approve a pending vulnerability (admin only).
+
+```typescript
+import { approveVulnerability } from '@/app/actions/vulnerabilities'
+
+const result = await approveVulnerability('vuln_id')
+```
+
+<ParamField path="id" type="string" required>
+  Vulnerability ID to approve
+</ParamField>
+
+**Authorization:**
+
+- Admin role required
+- Admin must belong to the same team as the vulnerability
+
+**Effect:**
+
+- Changes `approvalStatus` from `PENDING` to `APPROVED`
+- Makes vulnerability visible to all team members
+- Sends notification to the creator
+
+## updateVulnerabilityStatus
+
+Update only the status field of a vulnerability.
+
+```typescript
+import { updateVulnerabilityStatus } from '@/app/actions/vulnerabilities'
+
+const result = await updateVulnerabilityStatus('vuln_id', 'RESOLVED')
+```
+
+<ParamField path="id" type="string" required>
+  Vulnerability ID
+</ParamField>
+
+<ParamField path="status" type="string" required>
+  New status value:
+  - `OPEN`
+  - `IN_PROGRESS`
+  - `RESOLVED`
+  - `WONT_FIX`
+</ParamField>
+
+**Authorization:**
+
+- Only the vulnerability owner can update status
+
+## assignVulnerability
+
+Assign a vulnerability to a team member (admin only).
+
+```typescript
+import { assignVulnerability } from '@/app/actions/vulnerabilities'
+
+const result = await assignVulnerability('vuln_id', 'user_id')
+
+// To unassign:
+const result = await assignVulnerability('vuln_id', null)
+```
+
+<ParamField path="vulnerabilityId" type="string" required>
+  Vulnerability ID to assign
+</ParamField>
+
+<ParamField path="assigneeId" type="string | null" required>
+  User ID to assign to, or `null` to unassign
+</ParamField>
+
+**Authorization:**
+
+- Admin role required
+- Assignee must be in the same team
+
+**Notifications:**
+
+When assigned, the system:
+1. Creates an in-app notification for the assignee
+2. Sends an email notification with:
+   - Vulnerability title
+   - Direct link to the vulnerability
+   - Assignment details
+
+**Notification Example:**
+
+```typescript
+{
+  type: "ASSIGNMENT",
+  title: "New Vulnerability Assigned",
+  message: "You have been assigned to: SQL Injection in User Login",
+  link: "/dashboard/vulnerabilities/vuln_123"
+}
+```
+
+## getTeamMembers
+
+Retrieve all members of the current user's team.
+
+```typescript
+import { getTeamMembers } from '@/app/actions/vulnerabilities'
+
+const result = await getTeamMembers()
+```
+
+**Response:**
+
+<ResponseField name="data" type="array">
+  Array of user objects with:
+  - `id`
+  - `name`
+  - `email`
+  - `role`
+</ResponseField>
+
+**Use Cases:**
+
+- Populating assignment dropdowns
+- Team member lists
+- Permission checks
+
+**Self-Healing:**
+
+If an admin has no team (edge case), automatically creates a team named "My Organization" and assigns the admin to it.
+
+## Example: Complete Workflow
+
+```typescript
+'use client'
+
+import { useState, useTransition } from 'react'
+import {
+  createVulnerability,
+  getTeamMembers,
+  assignVulnerability
+} from '@/app/actions/vulnerabilities'
+
+export function VulnWorkflow() {
+  const [isPending, startTransition] = useTransition()
+  const [members, setMembers] = useState([])
+
+  // Load team members for assignment
+  useEffect(() => {
+    async function load() {
+      const result = await getTeamMembers()
+      if (result.success) setMembers(result.data)
+    }
+    load()
+  }, [])
+
+  async function handleCreate(formData: FormData) {
+    startTransition(async () => {
+      // 1. Create vulnerability
+      const createResult = await createVulnerability({
+        title: formData.get('title'),
+        description: formData.get('description'),
+        severity: formData.get('severity'),
+        cveId: formData.get('cveId') || undefined
+      })
+
+      if (!createResult.success) {
+        alert(createResult.error)
+        return
+      }
+
+      // 2. Assign to team member
+      const assigneeId = formData.get('assignee')
+      if (assigneeId) {
+        await assignVulnerability(
+          createResult.data.id,
+          assigneeId
+        )
+      }
+
+      alert('Vulnerability created successfully!')
+    })
+  }
+
+  return (
+    <form action={handleCreate}>
+      <input name="title" required />
+      <textarea name="description" required />
+      <select name="severity" required>
+        <option value="LOW">Low</option>
+        <option value="MEDIUM">Medium</option>
+        <option value="HIGH">High</option>
+        <option value="CRITICAL">Critical</option>
+      </select>
+      <input name="cveId" placeholder="CVE-2024-1234 (optional)" />
+      <select name="assignee">
+        <option value="">Unassigned</option>
+        {members.map(m => (
+          <option key={m.id} value={m.id}>{m.name}</option>
+        ))}
+      </select>
+      <button disabled={isPending}>Create</button>
+    </form>
+  )
+}
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Scoring" icon="calculator" href="/api/scoring">
+    Calculate DREAD and STRIDE scores
+  </Card>
+  <Card title="Comments" icon="comments" href="/api/vulnerabilities#comments">
+    Add comments and collaboration
+  </Card>
+</CardGroup>
