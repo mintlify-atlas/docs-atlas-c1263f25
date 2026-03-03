@@ -1,0 +1,132 @@
+{
+  "projectType": "saas",
+  "projectName": "VulnTrack",
+  "projectDescription": "Open-source vulnerability management platform with unified risk scoring using DREAD, STRIDE, and CVSS frameworks",
+  "theme": "aspen",
+  "primaryColor": "#dc2626",
+  "lightColor": null,
+  "darkColor": null,
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/vulnerability-management",
+              "features/risk-scoring",
+              "features/cve-import",
+              "features/reporting",
+              "features/team-collaboration"
+            ]
+          },
+          {
+            "group": "Scoring Frameworks",
+            "pages": [
+              "scoring/cvss",
+              "scoring/dread",
+              "scoring/stride",
+              "scoring/comparison"
+            ]
+          },
+          {
+            "group": "User Guides",
+            "pages": [
+              "guides/creating-vulnerabilities",
+              "guides/assigning-tasks",
+              "guides/generating-reports",
+              "guides/team-management",
+              "guides/user-roles"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "configuration/environment-variables",
+              "configuration/database-setup",
+              "configuration/authentication",
+              "configuration/email"
+            ]
+          },
+          {
+            "group": "Deployment",
+            "pages": [
+              "deployment/docker",
+              "deployment/production",
+              "deployment/security"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Getting Started",
+            "pages": [
+              "api/overview",
+              "api/authentication"
+            ]
+          },
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api/vulnerabilities",
+              "api/teams",
+              "api/users",
+              "api/scoring",
+              "api/reports"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Resources",
+        "groups": [
+          {
+            "group": "Learning",
+            "pages": [
+              "resources/security-frameworks",
+              "resources/best-practices",
+              "resources/faq"
+            ]
+          },
+          {
+            "group": "Community",
+            "pages": [
+              "resources/contributing",
+              "resources/changelog",
+              "resources/support"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Unified risk scoring with DREAD, STRIDE, and CVSS v3.1",
+    "Automated CVE data import from NIST NVD",
+    "Team-based workspaces with role-based access control",
+    "Executive-ready PDF and CSV report generation",
+    "Built-in research blog with OWASP Top 10 analysis",
+    "Dark-mode first UI for long operational sessions"
+  ],
+  "publicApiSurface": [
+    "/api/auth - NextAuth.js authentication endpoints",
+    "Server Actions: createVulnerability, updateVulnerability, deleteVulnerability",
+    "Server Actions: calculateDreadScore, applyStrideFramework",
+    "Server Actions: generateReport, exportToPDF, exportToCSV",
+    "Server Actions: inviteUser, updateUserRole, removeUser",
+    "Server Actions: fetchCveData, importCveData",
+    "Server Actions: createTeam, updateTeam, deleteTeam"
+  ]
+}
