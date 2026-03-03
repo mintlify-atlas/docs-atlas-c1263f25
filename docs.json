@@ -96,7 +96,9 @@
               "api/teams",
               "api/users",
               "api/scoring",
-              "api/reports"
+              "api/reports",
+              "api/comments",
+              "api/notifications"
             ]
           }
         ]

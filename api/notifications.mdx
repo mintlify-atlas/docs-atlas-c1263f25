@@ -1,0 +1,253 @@
+---
+title: Notifications API
+description: Server actions for managing user notifications and alerts
+---
+
+## Overview
+
+The Notifications API manages real-time alerts for vulnerability assignments, status changes, comments, and team activity. Notifications appear in the dashboard header and provide quick navigation to relevant resources.
+
+## Server Actions
+
+### getNotifications
+
+Retrieve recent notifications for the authenticated user.
+
+**Returns:**
+
+<ResponseField name="success" type="boolean">
+  Whether the operation succeeded
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Notification data object
+  <Expandable title="properties">
+    <ResponseField name="notifications" type="array">
+      Array of up to 20 most recent notifications
+    </ResponseField>
+    <ResponseField name="unreadCount" type="number">
+      Count of unread notifications
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+**Example:**
+
+```typescript
+import { getNotifications } from '@/app/actions/notifications'
+
+const result = await getNotifications()
+
+if (result.success) {
+  const { notifications, unreadCount } = result.data
+  console.log(`You have ${unreadCount} unread notifications`)
+}
+```
+
+---
+
+### markAsRead
+
+Mark a specific notification as read.
+
+<ParamField path="notificationId" type="string" required>
+  The ID of the notification to mark as read
+</ParamField>
+
+**Returns:**
+
+<ResponseField name="success" type="boolean">
+  Whether the operation succeeded
+</ResponseField>
+
+**Example:**
+
+```typescript
+import { markAsRead } from '@/app/actions/notifications'
+
+const result = await markAsRead('notif_123')
+```
+
+---
+
+### markAllAsRead
+
+Mark all unread notifications as read for the current user.
+
+**Returns:**
+
+<ResponseField name="success" type="boolean">
+  Whether the operation succeeded
+</ResponseField>
+
+**Example:**
+
+```typescript
+import { markAllAsRead } from '@/app/actions/notifications'
+
+const result = await markAllAsRead()
+```
+
+---
+
+### deleteNotification
+
+Delete a specific notification.
+
+<ParamField path="notificationId" type="string" required>
+  The ID of the notification to delete
+</ParamField>
+
+**Returns:**
+
+<ResponseField name="success" type="boolean">
+  Whether the operation succeeded
+</ResponseField>
+
+**Example:**
+
+```typescript
+import { deleteNotification } from '@/app/actions/notifications'
+
+const result = await deleteNotification('notif_123')
+```
+
+---
+
+### createNotification
+
+Create a new notification (typically used by other server actions).
+
+<ParamField path="data" type="object" required>
+  Notification data object
+</ParamField>
+
+<ParamField path="data.userId" type="string" required>
+  ID of the user to notify
+</ParamField>
+
+<ParamField path="data.type" type="string" required>
+  Notification type (e.g., VULNERABILITY_ASSIGNED, STATUS_CHANGED, COMMENT_ADDED)
+</ParamField>
+
+<ParamField path="data.title" type="string" required>
+  Notification title
+</ParamField>
+
+<ParamField path="data.message" type="string" required>
+  Notification message body
+</ParamField>
+
+<ParamField path="data.link" type="string">
+  Optional link to related resource
+</ParamField>
+
+**Returns:**
+
+<ResponseField name="success" type="boolean">
+  Whether the operation succeeded
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  The created notification object
+</ResponseField>
+
+**Example:**
+
+```typescript
+import { createNotification } from '@/app/actions/notifications'
+
+const result = await createNotification({
+  userId: 'user_123',
+  type: 'VULNERABILITY_ASSIGNED',
+  title: 'New vulnerability assigned',
+  message: 'CVE-2024-1234 has been assigned to you',
+  link: '/dashboard/vulnerabilities/vuln_123'
+})
+```
+
+---
+
+## Notification Types
+
+<AccordionGroup>
+  <Accordion title="VULNERABILITY_ASSIGNED">
+    Triggered when a vulnerability is assigned to a user. Includes link to the vulnerability detail page.
+  </Accordion>
+
+  <Accordion title="STATUS_CHANGED">
+    Triggered when a vulnerability status changes (e.g., OPEN → IN_PROGRESS → RESOLVED). Notifies assigned user and vulnerability creator.
+  </Accordion>
+
+  <Accordion title="COMMENT_ADDED">
+    Triggered when someone comments on a vulnerability the user is involved with (created or assigned to).
+  </Accordion>
+
+  <Accordion title="APPROVAL_REQUIRED">
+    Triggered when a non-admin user creates a vulnerability that requires admin approval.
+  </Accordion>
+</AccordionGroup>
+
+## Notification Schema
+
+Each notification object contains:
+
+```typescript
+interface Notification {
+  id: string
+  type: string
+  title: string
+  message: string
+  read: boolean
+  link?: string
+  userId: string
+  createdAt: Date
+}
+```
+
+## Security
+
+- All notification operations are scoped to the authenticated user
+- Users can only access their own notifications
+- `createNotification` is used internally by other server actions
+- Revalidates dashboard cache after mutations
+
+## Integration Example
+
+```typescript
+// In vulnerability assignment action
+import { createNotification } from '@/app/actions/notifications'
+import { sendEmail } from '@/lib/email'
+
+export async function assignVulnerability(vulnId: string, userId: string) {
+  // ... assign vulnerability logic ...
+  
+  // Create notification
+  await createNotification({
+    userId,
+    type: 'VULNERABILITY_ASSIGNED',
+    title: 'New vulnerability assigned',
+    message: `${vulnerability.title} has been assigned to you`,
+    link: `/dashboard/vulnerabilities/${vulnId}`
+  })
+  
+  // Send email notification
+  await sendEmail({
+    to: user.email,
+    subject: 'New vulnerability assigned',
+    template: 'vulnerability-assigned',
+    data: { vulnerability, user }
+  })
+}
+```
+
+## Related APIs
+
+<CardGroup cols={2}>
+  <Card title="Vulnerabilities" icon="shield-halved" href="/api/vulnerabilities">
+    Assignment triggers notifications
+  </Card>
+  <Card title="Comments" icon="comments" href="/api/comments">
+    Comments trigger notifications
+  </Card>
+</CardGroup>

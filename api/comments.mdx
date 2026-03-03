@@ -1,0 +1,161 @@
+---
+title: Comments API
+description: Server actions for managing vulnerability comments and collaboration
+---
+
+## Overview
+
+The Comments API enables team collaboration through threaded discussions on vulnerabilities. All comment operations enforce team-based access control to ensure data isolation.
+
+## Server Actions
+
+### addComment
+
+Add a comment to a vulnerability.
+
+<ParamField path="vulnerabilityId" type="string" required>
+  The ID of the vulnerability to comment on
+</ParamField>
+
+<ParamField path="content" type="string" required>
+  The comment text content
+</ParamField>
+
+**Returns:**
+
+<ResponseField name="success" type="boolean">
+  Whether the operation succeeded
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  The created comment object
+  <Expandable title="properties">
+    <ResponseField name="id" type="string">
+      Comment ID
+    </ResponseField>
+    <ResponseField name="content" type="string">
+      Comment content
+    </ResponseField>
+    <ResponseField name="vulnerabilityId" type="string">
+      Associated vulnerability ID
+    </ResponseField>
+    <ResponseField name="userId" type="string">
+      Author's user ID
+    </ResponseField>
+    <ResponseField name="createdAt" type="datetime">
+      Timestamp when comment was created
+    </ResponseField>
+    <ResponseField name="user" type="object">
+      Author information (name, email, image)
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+**Example:**
+
+```typescript
+import { addComment } from '@/app/actions/comments'
+
+const result = await addComment(
+  'vuln_123',
+  'This vulnerability affects our production API endpoints'
+)
+
+if (result.success) {
+  console.log('Comment added:', result.data)
+}
+```
+
+**Authorization:**
+- User must belong to the same team as the vulnerability
+- Logs audit trail entry
+- Revalidates vulnerability page cache
+
+---
+
+### getComments
+
+Retrieve all comments for a vulnerability.
+
+<ParamField path="vulnerabilityId" type="string" required>
+  The ID of the vulnerability
+</ParamField>
+
+**Returns:**
+
+<ResponseField name="success" type="boolean">
+  Whether the operation succeeded
+</ResponseField>
+
+<ResponseField name="data" type="array">
+  Array of comment objects, ordered by creation date (newest first)
+</ResponseField>
+
+**Example:**
+
+```typescript
+import { getComments } from '@/app/actions/comments'
+
+const result = await getComments('vuln_123')
+
+if (result.success) {
+  result.data.forEach(comment => {
+    console.log(`${comment.user.name}: ${comment.content}`)
+  })
+}
+```
+
+**Authorization:**
+- User must belong to the same team as the vulnerability
+- Returns empty array if unauthorized
+
+---
+
+## Security
+
+### Team Isolation
+
+All comment operations verify that:
+1. User is authenticated
+2. User belongs to a team
+3. Vulnerability belongs to the same team
+4. Cross-team access is prevented
+
+### Audit Logging
+
+Comment creation is logged to the audit trail with:
+- Action type: `ADD_COMMENT`
+- Entity type: `Vulnerability`
+- Entity ID: vulnerability ID
+- Details: User email who added the comment
+
+## Use Cases
+
+<AccordionGroup>
+  <Accordion title="Vulnerability discussion">
+    Team members can discuss impact, affected systems, and remediation strategies directly on vulnerability entries.
+  </Accordion>
+
+  <Accordion title="Remediation tracking">
+    Document remediation progress, testing results, and verification steps as comments for audit trail.
+  </Accordion>
+
+  <Accordion title="Analyst collaboration">
+    Analysts can request additional information or clarification from vulnerability reporters through comments.
+  </Accordion>
+
+  <Accordion title="Executive updates">
+    Provide status updates or priority changes through comments visible to all team members.
+  </Accordion>
+</AccordionGroup>
+
+## Related APIs
+
+<CardGroup cols={2}>
+  <Card title="Vulnerabilities" icon="shield-halved" href="/api/vulnerabilities">
+    Manage vulnerability entries
+  </Card>
+  <Card title="Notifications" icon="bell" href="/api/notifications">
+    Get notified about new comments
+  </Card>
+</CardGroup>
